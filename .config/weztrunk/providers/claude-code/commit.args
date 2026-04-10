@@ -1,0 +1,6 @@
+# Extra non-interactive Claude Code arguments for Worktrunk summaries and commit generation.
+# One CLI argument per line.
+#
+# Example:
+# --model
+# haiku

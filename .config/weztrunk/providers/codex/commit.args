@@ -1,0 +1,6 @@
+# Extra non-interactive Codex arguments for Worktrunk summaries and commit generation.
+# One CLI argument per line.
+#
+# Example:
+# -m
+# gpt-5.4-mini

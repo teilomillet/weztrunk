@@ -3,6 +3,23 @@ local act = wezterm.action
 
 local config = wezterm.config_builder()
 local wt_code_runner = wezterm.home_dir .. '/.local/bin/wt-code'
+local weztrunk_manual_runner = wezterm.home_dir .. '/.local/bin/weztrunk-manual'
+
+local function get_appearance()
+  if wezterm.gui then
+    return wezterm.gui.get_appearance()
+  end
+
+  return 'Dark'
+end
+
+local function scheme_for_appearance(appearance)
+  if appearance:find 'Dark' then
+    return 'Builtin Solarized Dark'
+  end
+
+  return 'Builtin Solarized Light'
+end
 
 local function path_from_cwd_uri(cwd)
   if not cwd then
@@ -162,6 +179,26 @@ local function worktrunk_create_branch()
   }
 end
 
+local function open_weztrunk_manual()
+  return wezterm.action_callback(function(window, pane)
+    window:perform_action(
+      act.SpawnCommandInNewTab {
+        cwd = wezterm.home_dir,
+        domain = 'DefaultDomain',
+        args = { weztrunk_manual_runner },
+      },
+      pane
+    )
+
+    window:toast_notification(
+      'WezTrunk',
+      'Opening the WezTrunk manual in a new tab',
+      nil,
+      3000
+    )
+  end)
+end
+
 wezterm.on('update-right-status', function(window, _)
   local parts = { window:active_workspace() }
   if window:leader_is_active() then
@@ -175,8 +212,13 @@ wezterm.on('augment-command-palette', function(_, _)
   return {
     {
       brief = 'Worktrunk: pick worktree and launch agent',
-      doc = 'Runs `wt switch` in the current local repo, opens the interactive picker, then launches or re-attaches the configured code agent in a new tab using dtach plus caffeinate -s.',
+      doc = 'Runs `wt switch` in the current local repo, opens the interactive picker, then launches or re-attaches the configured code agent in a new tab using dtach plus the configured sleep guard.',
       action = worktrunk_picker(),
+    },
+    {
+      brief = 'WezTrunk: open manual',
+      doc = 'Opens the local WezTrunk manual in a new tab, including the current shell commands, WezTerm shortcuts, Worktrunk aliases, and multi-agent configuration model.',
+      action = open_weztrunk_manual(),
     },
     {
       brief = 'Worktrunk: create branch and launch agent',
@@ -205,6 +247,7 @@ end)
 
 config.window_decorations = 'INTEGRATED_BUTTONS|RESIZE'
 config.integrated_title_button_alignment = 'Left'
+config.color_scheme = scheme_for_appearance(get_appearance())
 config.use_fancy_tab_bar = false
 config.hide_tab_bar_if_only_one_tab = true
 config.tab_max_width = 32
@@ -230,6 +273,7 @@ config.keys = {
   { key = 'f', mods = 'CMD|SHIFT', action = act.Search 'CurrentSelectionOrEmptyString' },
   { key = 'g', mods = 'CMD|SHIFT', action = worktrunk_picker() },
   { key = 'l', mods = 'CMD|SHIFT', action = act.ShowLauncherArgs { flags = 'FUZZY|TABS|WORKSPACES|COMMANDS|KEY_ASSIGNMENTS' } },
+  { key = 'm', mods = 'CMD|SHIFT', action = open_weztrunk_manual() },
   { key = 'p', mods = 'CMD|SHIFT', action = act.ActivateCommandPalette },
   { key = 'r', mods = 'CMD|SHIFT', action = act.ReloadConfiguration },
   { key = 'Space', mods = 'CMD|SHIFT', action = act.QuickSelect },
@@ -268,6 +312,7 @@ config.keys = {
   { key = 'j', mods = 'LEADER', action = act.ActivatePaneDirection 'Down' },
   { key = 'k', mods = 'LEADER', action = act.ActivatePaneDirection 'Up' },
   { key = 'l', mods = 'LEADER', action = act.ActivatePaneDirection 'Right' },
+  { key = 'm', mods = 'LEADER', action = open_weztrunk_manual() },
   { key = 'H', mods = 'LEADER', action = act.AdjustPaneSize { 'Left', 5 } },
   { key = 'J', mods = 'LEADER', action = act.AdjustPaneSize { 'Down', 5 } },
   { key = 'K', mods = 'LEADER', action = act.AdjustPaneSize { 'Up', 5 } },

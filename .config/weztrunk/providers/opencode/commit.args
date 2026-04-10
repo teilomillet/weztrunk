@@ -1,0 +1,6 @@
+# Extra non-interactive OpenCode arguments for Worktrunk summaries and commit generation.
+# One CLI argument per line.
+#
+# Example:
+# --model
+# anthropic/claude-haiku-4-5

@@ -1,0 +1,96 @@
+#!/bin/sh
+
+set -eu
+
+profile=${WEZTRUNK_AGENT_PROFILE:-"$HOME/.config/weztrunk/agent-profile.sh"}
+
+usage() {
+  printf 'Usage: %s <launch|commit|socket-path|cleanup|name> [args...]\n' "$0" >&2
+  exit 64
+}
+
+sanitize() {
+  printf '%s' "$1" | tr '/[:space:]' '--' | tr -cs '[:alnum:]._-' '-'
+}
+
+socket_path() {
+  if [ "$#" -ne 2 ]; then
+    usage
+  fi
+
+  repo_safe=$(sanitize "$1")
+  branch_safe=$(sanitize "$2")
+  state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
+
+  printf '%s/worktrunk/dtach/%s-%s.sock\n' "$state_home" "$repo_safe" "$branch_safe"
+}
+
+load_profile() {
+  if [ ! -r "$profile" ]; then
+    printf 'WezTrunk agent profile not found: %s\n' "$profile" >&2
+    exit 127
+  fi
+
+  # shellcheck source=/dev/null
+  . "$profile"
+}
+
+cleanup_socket() {
+  socket=$(socket_path "$1" "$2")
+
+  if [ ! -e "$socket" ] && [ ! -S "$socket" ]; then
+    return 0
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    pids=$(lsof -t -- "$socket" 2>/dev/null | sort -u | tr '\n' ' ')
+    if [ -n "$pids" ]; then
+      kill $pids 2>/dev/null || true
+    fi
+  fi
+
+  rm -f "$socket" 2>/dev/null || true
+}
+
+cmd=${1:-}
+[ -n "$cmd" ] || usage
+shift
+
+case "$cmd" in
+  launch)
+    load_profile
+    command -v weztrunk_agent_launch >/dev/null 2>&1 || {
+      printf 'WezTrunk agent profile is missing weztrunk_agent_launch().\n' >&2
+      exit 127
+    }
+    weztrunk_agent_launch "$@"
+    ;;
+  commit)
+    load_profile
+    command -v weztrunk_agent_commit >/dev/null 2>&1 || {
+      printf 'WezTrunk agent profile is missing weztrunk_agent_commit().\n' >&2
+      exit 127
+    }
+    weztrunk_agent_commit "$@"
+    ;;
+  socket-path)
+    socket_path "$@"
+    ;;
+  cleanup)
+    if [ "$#" -ne 2 ]; then
+      usage
+    fi
+    cleanup_socket "$1" "$2"
+    ;;
+  name)
+    load_profile
+    if command -v weztrunk_agent_name >/dev/null 2>&1; then
+      weztrunk_agent_name
+    else
+      printf 'code\n'
+    fi
+    ;;
+  *)
+    usage
+    ;;
+esac

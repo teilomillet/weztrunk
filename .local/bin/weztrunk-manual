@@ -1,0 +1,34 @@
+#!/bin/sh
+
+set -eu
+
+manual_path=${WEZTRUNK_MANUAL_PATH:-"$HOME/.config/weztrunk/MANUAL.md"}
+
+if [ ! -r "$manual_path" ]; then
+  printf 'WezTrunk manual not found: %s\n' "$manual_path" >&2
+  exit 127
+fi
+
+case "${1:-}" in
+  --path)
+    printf '%s\n' "$manual_path"
+    ;;
+  --raw)
+    cat "$manual_path"
+    ;;
+  *)
+    if [ -t 1 ] && command -v glow >/dev/null 2>&1; then
+      exec glow -p "$manual_path"
+    fi
+
+    if [ -t 1 ] && command -v bat >/dev/null 2>&1; then
+      exec bat --paging=always --language=markdown "$manual_path"
+    fi
+
+    if [ -t 1 ] && command -v less >/dev/null 2>&1; then
+      exec sh -c 'cat "$1" | ${PAGER:-less -R}' sh "$manual_path"
+    fi
+
+    exec cat "$manual_path"
+    ;;
+esac

@@ -7,5 +7,16 @@ full = true
 [switch]
 cd = true
 
+[aliases]
+"weztrunk-agent" = "$HOME/.local/bin/wt-code '{{ repo }}' '{{ branch | sanitize }}'"
+"weztrunk-hydrate" = "wt step copy-ignored"
+"weztrunk-manual" = "$HOME/.local/bin/weztrunk-manual"
+
 [commit.generation]
 command = "$HOME/.local/bin/worktrunk-code-commit"
+
+[post-switch]
+tmux = "[ -n \"$TMUX\" ] && tmux rename-window '{{ branch | sanitize }}' >/dev/null 2>&1 || true"
+
+[post-remove]
+agent = "$HOME/.local/bin/weztrunk-agent cleanup '{{ repo }}' '{{ branch | sanitize }}'"

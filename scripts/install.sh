@@ -59,12 +59,27 @@ link_file() {
 
 link_file "$repo_root/.wezterm.lua" "$HOME/.wezterm.lua"
 link_file "$repo_root/.config/worktrunk/config.toml" "$HOME/.config/worktrunk/config.toml"
+link_file "$repo_root/.config/weztrunk/MANUAL.md" "$HOME/.config/weztrunk/MANUAL.md"
+link_file "$repo_root/.config/weztrunk/agent-profile.sh" "$HOME/.config/weztrunk/agent-profile.sh"
+link_file "$repo_root/.config/weztrunk/providers/codex/launch.args" "$HOME/.config/weztrunk/providers/codex/launch.args"
+link_file "$repo_root/.config/weztrunk/providers/codex/commit.args" "$HOME/.config/weztrunk/providers/codex/commit.args"
+link_file "$repo_root/.config/weztrunk/providers/claude-code/launch.args" "$HOME/.config/weztrunk/providers/claude-code/launch.args"
+link_file "$repo_root/.config/weztrunk/providers/claude-code/commit.args" "$HOME/.config/weztrunk/providers/claude-code/commit.args"
+link_file "$repo_root/.config/weztrunk/providers/opencode/launch.args" "$HOME/.config/weztrunk/providers/opencode/launch.args"
+link_file "$repo_root/.config/weztrunk/providers/opencode/commit.args" "$HOME/.config/weztrunk/providers/opencode/commit.args"
+link_file "$repo_root/.local/bin/weztrunk-agent" "$HOME/.local/bin/weztrunk-agent"
+link_file "$repo_root/.local/bin/weztrunk-manual" "$HOME/.local/bin/weztrunk-manual"
 link_file "$repo_root/.local/bin/wt-code" "$HOME/.local/bin/wt-code"
 link_file "$repo_root/.local/bin/worktrunk-code-commit" "$HOME/.local/bin/worktrunk-code-commit"
 link_file "$repo_root/shell/weztrunk.sh" "$HOME/.config/weztrunk/weztrunk.sh"
 link_file "$repo_root/shell/weztrunk.zsh" "$HOME/.config/weztrunk/weztrunk.zsh"
 
-chmod +x "$HOME/.local/bin/wt-code" "$HOME/.local/bin/worktrunk-code-commit"
+chmod +x \
+  "$HOME/.local/bin/weztrunk-manual" \
+  "$HOME/.config/weztrunk/agent-profile.sh" \
+  "$HOME/.local/bin/weztrunk-agent" \
+  "$HOME/.local/bin/wt-code" \
+  "$HOME/.local/bin/worktrunk-code-commit"
 
 shell_rc=$(detect_shell_rc)
 rc_line='source "$HOME/.config/weztrunk/weztrunk.sh"'

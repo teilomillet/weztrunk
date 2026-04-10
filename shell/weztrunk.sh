@@ -26,3 +26,16 @@ wtx() {
 }
 
 alias wtn='wtx --create'
+
+wthelp() {
+  manual="$HOME/.local/bin/weztrunk-manual"
+
+  if [ ! -x "$manual" ]; then
+    printf 'WezTrunk manual runner not found: %s\n' "$manual" >&2
+    return 1
+  fi
+
+  "$manual" "$@"
+}
+
+alias wtm='wthelp'

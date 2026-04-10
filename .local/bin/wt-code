@@ -7,36 +7,87 @@ if [ "$#" -lt 2 ]; then
   exit 64
 fi
 
+dispatcher=${WEZTRUNK_AGENT_DISPATCHER:-"$HOME/.local/bin/weztrunk-agent"}
+
+if [ ! -x "$dispatcher" ]; then
+  printf 'WezTrunk agent dispatcher not found: %s\n' "$dispatcher" >&2
+  exit 127
+fi
+
 repo=$1
 branch=$2
 shift 2
 
-sanitize() {
-  printf '%s' "$1" | tr '/[:space:]' '--' | tr -cs '[:alnum:]._-' '-'
-}
-
-state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
-socket_dir="$state_home/worktrunk/dtach"
+socket=$("$dispatcher" socket-path "$repo" "$branch")
+socket_dir=$(dirname "$socket")
 mkdir -p "$socket_dir"
 
-repo_safe=$(sanitize "$repo")
-branch_safe=$(sanitize "$branch")
-socket="$socket_dir/${repo_safe}-${branch_safe}.sock"
+find_bin() {
+  bin_name=$1
+  fallback=$2
 
-if [ -n "${WWC_AGENT_BIN:-}" ]; then
-  agent_bin=$WWC_AGENT_BIN
-elif command -v codex >/dev/null 2>&1; then
-  agent_bin=$(command -v codex)
-elif [ -x /opt/homebrew/bin/codex ]; then
-  agent_bin=/opt/homebrew/bin/codex
-else
-  printf 'No agent CLI found. Set WWC_AGENT_BIN or install codex.\n' >&2
+  if command -v "$bin_name" >/dev/null 2>&1; then
+    command -v "$bin_name"
+    return 0
+  fi
+
+  if [ -n "$fallback" ] && [ -x "$fallback" ]; then
+    printf '%s\n' "$fallback"
+    return 0
+  fi
+
+  return 1
+}
+
+dtach_bin=$(find_bin dtach /opt/homebrew/bin/dtach) || {
+  printf 'dtach not found. Install it and ensure it is on PATH.\n' >&2
   exit 127
-fi
+}
 
-exec /opt/homebrew/bin/dtach -A "$socket" -z -r winch /usr/bin/caffeinate -s \
-  "$agent_bin" \
-  -c model_reasoning_effort='xhigh' \
-  --sandbox workspace-write \
-  -c sandbox_workspace_write.network_access=true \
-  "$@"
+sleep_guard=${WEZTRUNK_SLEEP_GUARD:-auto}
+
+case "$sleep_guard" in
+  auto|'')
+    if caffeinate_bin=$(find_bin caffeinate /usr/bin/caffeinate); then
+      exec "$dtach_bin" -A "$socket" -z -r winch "$caffeinate_bin" -s "$dispatcher" launch "$@"
+    fi
+
+    if inhibit_bin=$(find_bin systemd-inhibit ''); then
+      exec "$dtach_bin" -A "$socket" -z -r winch \
+        "$inhibit_bin" \
+        --what=sleep \
+        --mode=block \
+        --why=WezTrunk-agent-session \
+        "$dispatcher" launch "$@"
+    fi
+
+    exec "$dtach_bin" -A "$socket" -z -r winch "$dispatcher" launch "$@"
+    ;;
+  none)
+    exec "$dtach_bin" -A "$socket" -z -r winch "$dispatcher" launch "$@"
+    ;;
+  caffeinate)
+    caffeinate_bin=$(find_bin caffeinate /usr/bin/caffeinate) || {
+      printf 'WEZTRUNK_SLEEP_GUARD=caffeinate was requested, but caffeinate was not found.\n' >&2
+      exit 127
+    }
+    exec "$dtach_bin" -A "$socket" -z -r winch "$caffeinate_bin" -s "$dispatcher" launch "$@"
+    ;;
+  systemd-inhibit)
+    inhibit_bin=$(find_bin systemd-inhibit '') || {
+      printf 'WEZTRUNK_SLEEP_GUARD=systemd-inhibit was requested, but systemd-inhibit was not found.\n' >&2
+      exit 127
+    }
+    exec "$dtach_bin" -A "$socket" -z -r winch \
+      "$inhibit_bin" \
+      --what=sleep \
+      --mode=block \
+      --why=WezTrunk-agent-session \
+      "$dispatcher" launch "$@"
+    ;;
+  *)
+    printf 'Unknown WEZTRUNK_SLEEP_GUARD value: %s\n' "$sleep_guard" >&2
+    printf 'Supported values: auto, none, caffeinate, systemd-inhibit\n' >&2
+    exit 64
+    ;;
+esac
