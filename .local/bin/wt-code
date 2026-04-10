@@ -1,0 +1,42 @@
+#!/bin/sh
+
+set -eu
+
+if [ "$#" -lt 2 ]; then
+  printf 'Usage: %s <repo> <branch> [agent args...]\n' "$0" >&2
+  exit 64
+fi
+
+repo=$1
+branch=$2
+shift 2
+
+sanitize() {
+  printf '%s' "$1" | tr '/[:space:]' '--' | tr -cs '[:alnum:]._-' '-'
+}
+
+state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
+socket_dir="$state_home/worktrunk/dtach"
+mkdir -p "$socket_dir"
+
+repo_safe=$(sanitize "$repo")
+branch_safe=$(sanitize "$branch")
+socket="$socket_dir/${repo_safe}-${branch_safe}.sock"
+
+if [ -n "${WWC_AGENT_BIN:-}" ]; then
+  agent_bin=$WWC_AGENT_BIN
+elif command -v codex >/dev/null 2>&1; then
+  agent_bin=$(command -v codex)
+elif [ -x /opt/homebrew/bin/codex ]; then
+  agent_bin=/opt/homebrew/bin/codex
+else
+  printf 'No agent CLI found. Set WWC_AGENT_BIN or install codex.\n' >&2
+  exit 127
+fi
+
+exec /opt/homebrew/bin/dtach -A "$socket" -z -r winch /usr/bin/caffeinate -s \
+  "$agent_bin" \
+  -c model_reasoning_effort='xhigh' \
+  --sandbox workspace-write \
+  -c sandbox_workspace_write.network_access=true \
+  "$@"

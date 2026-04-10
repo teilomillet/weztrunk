@@ -1,0 +1,11 @@
+worktree-path = ".worktrees/{{ branch | sanitize }}"
+
+[list]
+summary = true
+full = true
+
+[switch]
+cd = true
+
+[commit.generation]
+command = "$HOME/.local/bin/worktrunk-code-commit"
