@@ -4,6 +4,19 @@ local act = wezterm.action
 local config = wezterm.config_builder()
 local wt_code_runner = wezterm.home_dir .. '/.local/bin/wt-code'
 local weztrunk_manual_runner = wezterm.home_dir .. '/.local/bin/weztrunk-manual'
+local builtin_schemes = wezterm.color.get_builtin_schemes()
+
+local function with_orange_accent(base_name, normal_orange, bright_orange)
+  local scheme = builtin_schemes[base_name]
+  if not scheme then
+    return nil
+  end
+
+  scheme.ansi[3] = normal_orange
+  scheme.brights[3] = bright_orange
+
+  return scheme
+end
 
 local function get_appearance()
   if wezterm.gui then
@@ -15,10 +28,10 @@ end
 
 local function scheme_for_appearance(appearance)
   if appearance:find 'Dark' then
-    return 'Gruvbox dark, hard (base16)'
+    return 'WezTrunk Gruvbox Dark Orange'
   end
 
-  return 'Gruvbox light, hard (base16)'
+  return 'WezTrunk Gruvbox Light Orange'
 end
 
 local function path_from_cwd_uri(cwd)
@@ -247,6 +260,18 @@ end)
 
 config.window_decorations = 'INTEGRATED_BUTTONS|RESIZE'
 config.integrated_title_button_alignment = 'Left'
+config.color_schemes = {
+  ['WezTrunk Gruvbox Dark Orange'] = with_orange_accent(
+    'Gruvbox dark, hard (base16)',
+    '#ffb86c',
+    '#ffd08a'
+  ),
+  ['WezTrunk Gruvbox Light Orange'] = with_orange_accent(
+    'Gruvbox light, hard (base16)',
+    '#b85c00',
+    '#d97706'
+  ),
+}
 config.color_scheme = scheme_for_appearance(get_appearance())
 config.text_min_contrast_ratio = 4.5
 config.use_fancy_tab_bar = false
