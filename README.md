@@ -16,7 +16,7 @@ The name stays agent-neutral on purpose. The current default implementation targ
 ## Files
 
 - [`.wezterm.lua`](./.wezterm.lua): WezTerm config with Worktrunk actions and tmux-style ergonomics.
-- [`shell/weztrunk.zsh`](./shell/weztrunk.zsh): `zsh` integration for `wt`, `wtx`, and `wtn`.
+- [`shell/weztrunk.sh`](./shell/weztrunk.sh): shared `bash`/`zsh` integration for `wt`, `wtx`, and `wtn`.
 - [`.config/worktrunk/config.toml`](./.config/worktrunk/config.toml): Worktrunk defaults.
 - [`.local/bin/wt-code`](./.local/bin/wt-code): detached interactive agent launcher.
 - [`.local/bin/worktrunk-code-commit`](./.local/bin/worktrunk-code-commit): non-interactive commit-message helper.
@@ -46,6 +46,18 @@ git clone https://github.com/teilomillet/weztrunk.git ~/Code/weztrunk
 cd ~/Code/weztrunk
 bash scripts/install.sh
 source ~/.zshrc
+```
+
+The installer auto-selects your shell startup file from `$SHELL`:
+
+- `zsh` -> `~/.zshrc`
+- `bash` -> `~/.bashrc`
+- fallback -> `~/.profile`
+
+You can override that with:
+
+```bash
+WEZTRUNK_SHELL_RC=~/.bash_profile bash scripts/install.sh
 ```
 
 Then reload WezTerm with `Cmd+Shift+R`.
