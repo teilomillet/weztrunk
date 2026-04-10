@@ -263,13 +263,13 @@ config.integrated_title_button_alignment = 'Left'
 config.color_schemes = {
   ['WezTrunk Gruvbox Dark Orange'] = with_orange_accent(
     'Gruvbox dark, hard (base16)',
-    '#ffb86c',
-    '#ffd08a'
+    '#ee8959',
+    '#f4aa88'
   ),
   ['WezTrunk Gruvbox Light Orange'] = with_orange_accent(
     'Gruvbox light, hard (base16)',
-    '#d97706',
-    '#f59e0b'
+    '#ee8959',
+    '#f4aa88'
   ),
 }
 config.color_scheme = scheme_for_appearance(get_appearance())
