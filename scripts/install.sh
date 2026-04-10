@@ -25,6 +25,16 @@ detect_shell_rc() {
   esac
 }
 
+bash_login_profile_sources_bashrc() {
+  for candidate in "$HOME/.bash_profile" "$HOME/.bash_login" "$HOME/.profile"; do
+    if [ -f "$candidate" ] && grep -Eq '(^|[[:space:]])(\.|source)[[:space:]].*bashrc([[:space:]]|$)' "$candidate"; then
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 backup_if_needed() {
   target=$1
 
@@ -66,3 +76,8 @@ fi
 printf 'Installed WezTrunk symlinks from %s\n' "$repo_root"
 printf 'Updated shell startup file: %s\n' "$shell_rc"
 printf 'Reload your shell or run: source %s\n' "$shell_rc"
+
+if [ "$shell_rc" = "$HOME/.bashrc" ] && ! bash_login_profile_sources_bashrc; then
+  printf 'Note: bash login shells may not load %s unless ~/.bash_profile, ~/.bash_login, or ~/.profile sources it.\n' "$shell_rc"
+  printf 'If your Linux terminal starts login shells, add `source ~/.bashrc` to one of those files or reinstall with WEZTRUNK_SHELL_RC=~/.profile.\n'
+fi

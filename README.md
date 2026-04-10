@@ -54,6 +54,8 @@ The installer auto-selects your shell startup file from `$SHELL`:
 - `bash` -> `~/.bashrc`
 - fallback -> `~/.profile`
 
+When `bash` is detected, the installer also checks whether `~/.bash_profile`, `~/.bash_login`, or `~/.profile` appears to source `~/.bashrc`. If not, it prints a Linux/login-shell note so you can decide whether to keep `~/.bashrc` or target `~/.profile` instead.
+
 You can override that with:
 
 ```bash
