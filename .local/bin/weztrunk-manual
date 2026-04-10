@@ -9,6 +9,40 @@ if [ ! -r "$manual_path" ]; then
   exit 127
 fi
 
+show_with_pager() {
+  if [ -t 1 ] && command -v glow >/dev/null 2>&1; then
+    exec glow -p "$manual_path"
+  fi
+
+  if [ -t 1 ] && command -v bat >/dev/null 2>&1; then
+    exec bat --paging=always --language=markdown "$manual_path"
+  fi
+
+  if [ -t 1 ] && command -v less >/dev/null 2>&1; then
+    exec sh -c 'cat "$1" | ${PAGER:-less -R}' sh "$manual_path"
+  fi
+
+  exec cat "$manual_path"
+}
+
+show_topics() {
+  exec rg -n '^## ' "$manual_path"
+}
+
+search_manual() {
+  query=$1
+
+  if [ -z "$query" ]; then
+    show_with_pager
+  fi
+
+  if [ -t 1 ] && command -v less >/dev/null 2>&1; then
+    exec sh -c 'rg --color=always -n -i -C 2 -- "$1" "$2" | ${PAGER:-less -R}' sh "$query" "$manual_path"
+  fi
+
+  exec rg --color=never -n -i -C 2 -- "$query" "$manual_path"
+}
+
 case "${1:-}" in
   --path)
     printf '%s\n' "$manual_path"
@@ -16,19 +50,17 @@ case "${1:-}" in
   --raw)
     cat "$manual_path"
     ;;
+  --topics)
+    show_topics
+    ;;
+  --search)
+    shift
+    search_manual "${*:-}"
+    ;;
+  "")
+    show_with_pager
+    ;;
   *)
-    if [ -t 1 ] && command -v glow >/dev/null 2>&1; then
-      exec glow -p "$manual_path"
-    fi
-
-    if [ -t 1 ] && command -v bat >/dev/null 2>&1; then
-      exec bat --paging=always --language=markdown "$manual_path"
-    fi
-
-    if [ -t 1 ] && command -v less >/dev/null 2>&1; then
-      exec sh -c 'cat "$1" | ${PAGER:-less -R}' sh "$manual_path"
-    fi
-
-    exec cat "$manual_path"
+    search_manual "$*"
     ;;
 esac

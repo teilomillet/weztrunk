@@ -15,27 +15,44 @@ if command -v wt >/dev/null 2>&1; then
 fi
 
 wtx() {
-  runner="$HOME/.local/bin/wt-code"
+  switcher="$HOME/.local/bin/weztrunk-switch"
 
-  if [ ! -x "$runner" ]; then
-    printf 'WezTrunk launcher not found: %s\n' "$runner" >&2
+  if [ ! -x "$switcher" ]; then
+    printf 'WezTrunk switch helper not found: %s\n' "$switcher" >&2
     return 1
   fi
 
-  wt switch -x "$runner '{{ repo }}' '{{ branch | sanitize }}'" "$@"
+  if [ "${1:-}" = "--create" ]; then
+    shift
+    "$switcher" create "$PWD" "$@"
+    return
+  fi
+
+  if [ "$#" -eq 0 ] || [ "${1:-}" = "--" ]; then
+    "$switcher" pick "$PWD" "$@"
+    return
+  fi
+
+  branch=$1
+  shift
+  "$switcher" switch "$PWD" "$branch" "$@"
 }
 
 alias wtn='wtx --create'
 
 wthelp() {
-  manual="$HOME/.local/bin/weztrunk-manual"
+  weztrunk_cmd="$HOME/.local/bin/weztrunk"
 
-  if [ ! -x "$manual" ]; then
-    printf 'WezTrunk manual runner not found: %s\n' "$manual" >&2
+  if [ ! -x "$weztrunk_cmd" ]; then
+    printf 'WezTrunk command not found: %s\n' "$weztrunk_cmd" >&2
     return 1
   fi
 
-  "$manual" "$@"
+  "$weztrunk_cmd" man "$@"
 }
 
-alias wtm='wthelp'
+wtman() {
+  wthelp "$@"
+}
+
+alias wtm='wtman'

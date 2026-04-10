@@ -82,6 +82,49 @@ weztrunk_agent_name() {
   printf '%s\n' "$(weztrunk_agent_provider)"
 }
 
+weztrunk_detect_appearance() {
+  case "${WEZTRUNK_APPEARANCE:-}" in
+    *Dark*|dark)
+      printf 'dark\n'
+      return 0
+      ;;
+    *Light*|light)
+      printf 'light\n'
+      return 0
+      ;;
+  esac
+
+  if [ "$(uname -s 2>/dev/null || printf unknown)" = Darwin ] && command -v defaults >/dev/null 2>&1; then
+    if defaults read -g AppleInterfaceStyle >/dev/null 2>&1; then
+      printf 'dark\n'
+    else
+      printf 'light\n'
+    fi
+    return 0
+  fi
+
+  background=${COLORFGBG##*;}
+  case "$background" in
+    ''|0|1|2|3|4|5|6|8)
+      printf 'dark\n'
+      ;;
+    *)
+      printf 'light\n'
+      ;;
+  esac
+}
+
+weztrunk_codex_theme() {
+  case "$(weztrunk_detect_appearance)" in
+    light)
+      printf 'weztrunk-gruvbox-light-violet\n'
+      ;;
+    *)
+      printf 'weztrunk-gruvbox-dark-tangerine\n'
+      ;;
+  esac
+}
+
 weztrunk_codex_launch() {
   agent_bin=$(weztrunk_find_agent_bin)
   prompt=$(weztrunk_join_args "$@")
@@ -91,7 +134,8 @@ weztrunk_codex_launch() {
     "$agent_bin" \
     -c model_reasoning_effort='xhigh' \
     --sandbox workspace-write \
-    -c sandbox_workspace_write.network_access=true
+    -c sandbox_workspace_write.network_access=true \
+    -c "tui.theme=\"$(weztrunk_codex_theme)\""
 
   if [ -r "$args_file" ]; then
     while IFS= read -r line || [ -n "$line" ]; do

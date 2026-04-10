@@ -1,22 +1,11 @@
 local wezterm = require 'wezterm'
 local act = wezterm.action
-
-local config = wezterm.config_builder()
-local wt_code_runner = wezterm.home_dir .. '/.local/bin/wt-code'
-local weztrunk_manual_runner = wezterm.home_dir .. '/.local/bin/weztrunk-manual'
 local builtin_schemes = wezterm.color.get_builtin_schemes()
 
-local function with_orange_accent(base_name, normal_orange, bright_orange)
-  local scheme = builtin_schemes[base_name]
-  if not scheme then
-    return nil
-  end
-
-  scheme.ansi[7] = normal_orange
-  scheme.brights[7] = bright_orange
-
-  return scheme
-end
+local config = wezterm.config_builder()
+local weztrunk_switch_runner = wezterm.home_dir .. '/.local/bin/weztrunk-switch'
+local weztrunk_cmd_runner = wezterm.home_dir .. '/.local/bin/weztrunk'
+local weztrunk_manual_runner = wezterm.home_dir .. '/.local/bin/weztrunk-manual'
 
 local function get_appearance()
   if wezterm.gui then
@@ -28,10 +17,32 @@ end
 
 local function scheme_for_appearance(appearance)
   if appearance:find 'Dark' then
-    return 'WezTrunk Gruvbox Dark Orange'
+    return 'WezTrunk Gruvbox dark, hard'
   end
 
-  return 'WezTrunk Gruvbox Light Orange'
+  return 'WezTrunk Gruvbox light, hard'
+end
+
+local function deep_copy(value)
+  if type(value) ~= 'table' then
+    return value
+  end
+
+  local copy = {}
+  for key, nested_value in pairs(value) do
+    copy[key] = deep_copy(nested_value)
+  end
+
+  return copy
+end
+
+local function with_accent_ansi(base_scheme, accent, bright_accent)
+  local scheme = deep_copy(base_scheme)
+  scheme.ansi[3] = accent
+  scheme.ansi[7] = accent
+  scheme.brights[3] = bright_accent
+  scheme.brights[7] = bright_accent
+  return scheme
 end
 
 local function path_from_cwd_uri(cwd)
@@ -135,13 +146,14 @@ local function spawn_worktrunk_agent(window, pane, opts)
     return
   end
 
-  local args = { 'wt', 'switch' }
+  local mode = 'pick'
   if opts.create then
-    table.insert(args, '--create')
+    mode = 'create'
+  elseif opts.branch then
+    mode = 'switch'
   end
 
-  table.insert(args, '-x')
-  table.insert(args, wt_code_runner .. " '{{ repo }}' '{{ branch | sanitize }}'")
+  local args = { weztrunk_switch_runner, mode, cwd }
 
   if opts.branch then
     table.insert(args, opts.branch)
@@ -212,6 +224,27 @@ local function open_weztrunk_manual()
   end)
 end
 
+local function search_weztrunk_manual()
+  return act.PromptInputLine {
+    description = 'Search the WezTrunk manual',
+    action = wezterm.action_callback(function(window, pane, line)
+      local args = { weztrunk_cmd_runner, 'man' }
+      if line and line ~= '' then
+        table.insert(args, line)
+      end
+
+      window:perform_action(
+        act.SpawnCommandInNewTab {
+          cwd = wezterm.home_dir,
+          domain = 'DefaultDomain',
+          args = args,
+        },
+        pane
+      )
+    end),
+  }
+end
+
 wezterm.on('update-right-status', function(window, _)
   local parts = { window:active_workspace() }
   if window:leader_is_active() then
@@ -232,6 +265,11 @@ wezterm.on('augment-command-palette', function(_, _)
       brief = 'WezTrunk: open manual',
       doc = 'Opens the local WezTrunk manual in a new tab, including the current shell commands, WezTerm shortcuts, Worktrunk aliases, and multi-agent configuration model.',
       action = open_weztrunk_manual(),
+    },
+    {
+      brief = 'WezTrunk: search manual',
+      doc = 'Prompts for a topic, then opens a new tab with a focused manual search. Useful for quick lookups like remove, merge, session, or provider.',
+      action = search_weztrunk_manual(),
     },
     {
       brief = 'Worktrunk: create branch and launch agent',
@@ -261,18 +299,21 @@ end)
 config.window_decorations = 'INTEGRATED_BUTTONS|RESIZE'
 config.integrated_title_button_alignment = 'Left'
 config.color_schemes = {
-  ['WezTrunk Gruvbox Dark Orange'] = with_orange_accent(
-    'Gruvbox dark, hard (base16)',
+  ['WezTrunk Gruvbox dark, hard'] = with_accent_ansi(
+    builtin_schemes['Gruvbox dark, hard (base16)'],
     '#ee8959',
     '#f4aa88'
   ),
-  ['WezTrunk Gruvbox Light Orange'] = with_orange_accent(
-    'Gruvbox light, hard (base16)',
-    '#ee8959',
-    '#f4aa88'
+  ['WezTrunk Gruvbox light, hard'] = with_accent_ansi(
+    builtin_schemes['Gruvbox light, hard (base16)'],
+    '#4c1d95',
+    '#5b21b6'
   ),
 }
 config.color_scheme = scheme_for_appearance(get_appearance())
+config.set_environment_variables = {
+  WEZTRUNK_APPEARANCE = get_appearance(),
+}
 config.text_min_contrast_ratio = 4.5
 config.use_fancy_tab_bar = false
 config.hide_tab_bar_if_only_one_tab = true
@@ -301,6 +342,7 @@ config.keys = {
   { key = 'l', mods = 'CMD|SHIFT', action = act.ShowLauncherArgs { flags = 'FUZZY|TABS|WORKSPACES|COMMANDS|KEY_ASSIGNMENTS' } },
   { key = 'm', mods = 'CMD|SHIFT', action = open_weztrunk_manual() },
   { key = 'p', mods = 'CMD|SHIFT', action = act.ActivateCommandPalette },
+  { key = '/', mods = 'CMD|SHIFT', action = search_weztrunk_manual() },
   { key = 'r', mods = 'CMD|SHIFT', action = act.ReloadConfiguration },
   { key = 'Space', mods = 'CMD|SHIFT', action = act.QuickSelect },
   { key = '[', mods = 'CMD|SHIFT', action = act.ActivateTabRelative(-1) },
@@ -339,6 +381,7 @@ config.keys = {
   { key = 'k', mods = 'LEADER', action = act.ActivatePaneDirection 'Up' },
   { key = 'l', mods = 'LEADER', action = act.ActivatePaneDirection 'Right' },
   { key = 'm', mods = 'LEADER', action = open_weztrunk_manual() },
+  { key = '/', mods = 'LEADER', action = search_weztrunk_manual() },
   { key = 'H', mods = 'LEADER', action = act.AdjustPaneSize { 'Left', 5 } },
   { key = 'J', mods = 'LEADER', action = act.AdjustPaneSize { 'Down', 5 } },
   { key = 'K', mods = 'LEADER', action = act.AdjustPaneSize { 'Up', 5 } },

@@ -22,6 +22,7 @@ The name stays agent-neutral on purpose. The current default implementation targ
 - [`.config/weztrunk/providers/`](./.config/weztrunk/providers): per-provider extra-flag files.
 - [`shell/weztrunk.sh`](./shell/weztrunk.sh): shared `bash`/`zsh` integration for `wt`, `wtx`, and `wtn`.
 - [`.config/worktrunk/config.toml`](./.config/worktrunk/config.toml): Worktrunk defaults.
+- [`.local/bin/weztrunk`](./.local/bin/weztrunk): top-level CLI entrypoint for manual and helper subcommands.
 - [`.local/bin/weztrunk-agent`](./.local/bin/weztrunk-agent): shared agent dispatcher and session utilities.
 - [`.local/bin/weztrunk-manual`](./.local/bin/weztrunk-manual): manual viewer for shell and WezTerm.
 - [`.local/bin/wt-code`](./.local/bin/wt-code): detached interactive agent launcher.
@@ -86,6 +87,8 @@ If you are upgrading an older install, rerun the installer once. This version ad
 - `wtx feature-x`: switch to that worktree and attach the branch session
 - `wtn feature-x`: create the branch/worktree and launch the agent
 - `wtx feature-x -- 'Fix flaky test'`: pass an initial prompt to Codex
+- `weztrunk man remove`: search the manual for a topic
+- `wtman merge`: same manual search path from the shell
 - `wthelp` or `wtm`: open the built-in manual
 - `wt step weztrunk-agent`: re-attach the current worktree's agent session
 - `wt step weztrunk-hydrate`: copy gitignored files into the current worktree on demand
@@ -97,7 +100,9 @@ If you are upgrading an older install, rerun the installer once. This version ad
 - `Cmd+B g`: same action on the leader layer
 - `Cmd+B G`: prompt for branch name, create worktree, launch agent
 - `Cmd+Shift+M`: open the WezTrunk manual in a new tab
+- `Cmd+Shift+/`: prompt for a manual topic and open a focused search in a new tab
 - `Cmd+B m`: same manual action on the leader layer
+- `Cmd+B /`: same manual-search action on the leader layer
 - `Cmd+Shift+P`, then type `Worktrunk`: self-documented command-palette entries
 
 ### Behavior

@@ -22,13 +22,41 @@ From the shell:
 - `wtx feature-x`: switch to a branch worktree and launch the agent there
 - `wtn feature-x`: create a branch/worktree and launch the agent
 - `wtx feature-x -- 'Fix flaky test'`: pass an initial prompt into the agent
-- `wthelp`: open this manual
+- `weztrunk man`: open this manual
+- `weztrunk man remove`: search this manual for a topic
+- `wthelp` or `wtm`: same manual command
 
 From Worktrunk directly:
 
 - `wt step weztrunk-agent`: re-attach the current worktree's agent session
 - `wt step weztrunk-hydrate`: copy gitignored files into the current worktree on demand
 - `wt step weztrunk-manual`: print this manual from inside a repo
+
+## Common Tasks
+
+Close or remove the current worktree:
+
+- `wt remove`
+- `wt remove --no-delete-branch`: remove the worktree but keep the branch
+- `wt remove -f`: remove even if the worktree has untracked files
+- `wt remove -D`: allow deletion of an unmerged branch
+
+Merge the current worktree back and clean it up:
+
+- `wt merge`
+- `wt merge --no-remove`: merge but keep the worktree around
+- `wt merge develop`: merge into a non-default target branch
+
+Jump around worktrees:
+
+- `wtx`: picker + launch or re-attach the agent
+- `wtx main`: jump straight to an existing worktree
+- `wtn feature-x`: create a branch/worktree and launch the agent
+
+Recover or inspect agent sessions:
+
+- `wt step weztrunk-agent`: re-attach the current worktree session
+- `weztrunk man session`: search this manual for session details
 
 ## Agent Selection
 
@@ -141,6 +169,21 @@ Sleep inhibition:
 - macOS uses `caffeinate -s` when available
 - Linux uses `systemd-inhibit --what=sleep` when available
 - `WEZTRUNK_SLEEP_GUARD=none` disables this
+
+## Manual Search
+
+Search the manual from the shell:
+
+- `weztrunk man remove`
+- `weztrunk man merge`
+- `weztrunk man session`
+- `weztrunk man provider`
+
+Useful flags:
+
+- `weztrunk man --topics`: list section headings only
+- `weztrunk man --raw`: print the full Markdown source
+- `weztrunk man --path`: print the manual file path
 
 ## Propagating Changes
 

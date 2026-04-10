@@ -1,0 +1,31 @@
+#!/bin/sh
+
+set -eu
+
+manual_runner=${WEZTRUNK_MANUAL_RUNNER:-"$HOME/.local/bin/weztrunk-manual"}
+switch_runner=${WEZTRUNK_SWITCH_RUNNER:-"$HOME/.local/bin/weztrunk-switch"}
+agent_runner=${WEZTRUNK_AGENT_RUNNER:-"$HOME/.local/bin/weztrunk-agent"}
+
+usage() {
+  printf 'Usage: %s <man|switch|agent> [args...]\n' "$0" >&2
+  exit 64
+}
+
+cmd=${1:-}
+[ -n "$cmd" ] || usage
+shift
+
+case "$cmd" in
+  man|manual|help)
+    exec "$manual_runner" "$@"
+    ;;
+  switch)
+    exec "$switch_runner" "$@"
+    ;;
+  agent)
+    exec "$agent_runner" "$@"
+    ;;
+  *)
+    usage
+    ;;
+esac

@@ -68,7 +68,9 @@ link_file "$repo_root/.config/weztrunk/providers/claude-code/commit.args" "$HOME
 link_file "$repo_root/.config/weztrunk/providers/opencode/launch.args" "$HOME/.config/weztrunk/providers/opencode/launch.args"
 link_file "$repo_root/.config/weztrunk/providers/opencode/commit.args" "$HOME/.config/weztrunk/providers/opencode/commit.args"
 link_file "$repo_root/.local/bin/weztrunk-agent" "$HOME/.local/bin/weztrunk-agent"
+link_file "$repo_root/.local/bin/weztrunk" "$HOME/.local/bin/weztrunk"
 link_file "$repo_root/.local/bin/weztrunk-manual" "$HOME/.local/bin/weztrunk-manual"
+link_file "$repo_root/.local/bin/weztrunk-switch" "$HOME/.local/bin/weztrunk-switch"
 link_file "$repo_root/.local/bin/wt-code" "$HOME/.local/bin/wt-code"
 link_file "$repo_root/.local/bin/worktrunk-code-commit" "$HOME/.local/bin/worktrunk-code-commit"
 link_file "$repo_root/shell/weztrunk.sh" "$HOME/.config/weztrunk/weztrunk.sh"
@@ -78,6 +80,8 @@ chmod +x \
   "$HOME/.local/bin/weztrunk-manual" \
   "$HOME/.config/weztrunk/agent-profile.sh" \
   "$HOME/.local/bin/weztrunk-agent" \
+  "$HOME/.local/bin/weztrunk" \
+  "$HOME/.local/bin/weztrunk-switch" \
   "$HOME/.local/bin/wt-code" \
   "$HOME/.local/bin/worktrunk-code-commit"
 

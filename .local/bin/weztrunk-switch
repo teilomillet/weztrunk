@@ -1,0 +1,100 @@
+#!/bin/sh
+
+set -eu
+
+usage() {
+  printf 'Usage: %s <pick|switch|create> <cwd> [branch] [-- agent args...]\n' "$0" >&2
+  exit 64
+}
+
+find_bin() {
+  bin_name=$1
+  fallback=$2
+
+  if command -v "$bin_name" >/dev/null 2>&1; then
+    command -v "$bin_name"
+    return 0
+  fi
+
+  if [ -n "$fallback" ] && [ -x "$fallback" ]; then
+    printf '%s\n' "$fallback"
+    return 0
+  fi
+
+  return 1
+}
+
+run_switch() {
+  branch=$1
+  shift
+
+  if [ "$#" -gt 0 ] && [ "$1" = "--" ]; then
+    shift
+  fi
+
+  if [ "$#" -gt 0 ]; then
+    exec "$wt_bin" -C "$repo_root" switch -x "$execute_cmd" "$branch" -- "$@"
+  fi
+
+  exec "$wt_bin" -C "$repo_root" switch -x "$execute_cmd" "$branch"
+}
+
+mode=${1:-}
+cwd=${2:-}
+[ -n "$mode" ] && [ -n "$cwd" ] || usage
+shift 2
+
+runner=${WEZTRUNK_WORKTRUNK_RUNNER:-"$HOME/.local/bin/wt-code"}
+[ -x "$runner" ] || {
+  printf 'WezTrunk runner not found: %s\n' "$runner" >&2
+  exit 127
+}
+
+wt_bin=$(find_bin wt /opt/homebrew/bin/wt) || {
+  printf 'Worktrunk CLI not found. Install `wt` or set PATH.\n' >&2
+  exit 127
+}
+
+git_bin=$(find_bin git /usr/bin/git) || {
+  printf 'git not found. Install git or set PATH.\n' >&2
+  exit 127
+}
+
+repo_root=$("$git_bin" -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || {
+  printf 'Current directory is not inside a git repository: %s\n' "$cwd" >&2
+  exit 64
+}
+
+execute_cmd=$runner" '{{ repo }}' '{{ branch | sanitize }}'"
+
+case "$mode" in
+  pick)
+    branch=$("$wt_bin" -C "$repo_root" switch --no-cd) || exit $?
+    [ -n "$branch" ] || exit 0
+    run_switch "$branch" "$@"
+    ;;
+  switch)
+    [ "$#" -ge 1 ] || usage
+    branch=$1
+    shift
+    run_switch "$branch" "$@"
+    ;;
+  create)
+    [ "$#" -ge 1 ] || usage
+    branch=$1
+    shift
+
+    if [ "$#" -gt 0 ] && [ "$1" = "--" ]; then
+      shift
+    fi
+
+    if [ "$#" -gt 0 ]; then
+      exec "$wt_bin" -C "$repo_root" switch --create -x "$execute_cmd" "$branch" -- "$@"
+    fi
+
+    exec "$wt_bin" -C "$repo_root" switch --create -x "$execute_cmd" "$branch"
+    ;;
+  *)
+    usage
+    ;;
+esac
