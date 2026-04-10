@@ -15,10 +15,10 @@ end
 
 local function scheme_for_appearance(appearance)
   if appearance:find 'Dark' then
-    return 'Builtin Solarized Dark'
+    return 'Gruvbox dark, hard (base16)'
   end
 
-  return 'Builtin Solarized Light'
+  return 'Gruvbox light, hard (base16)'
 end
 
 local function path_from_cwd_uri(cwd)
@@ -248,6 +248,7 @@ end)
 config.window_decorations = 'INTEGRATED_BUTTONS|RESIZE'
 config.integrated_title_button_alignment = 'Left'
 config.color_scheme = scheme_for_appearance(get_appearance())
+config.text_min_contrast_ratio = 4.5
 config.use_fancy_tab_bar = false
 config.hide_tab_bar_if_only_one_tab = true
 config.tab_max_width = 32
