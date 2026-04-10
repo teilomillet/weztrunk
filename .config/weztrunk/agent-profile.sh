@@ -1,7 +1,7 @@
 #!/bin/sh
 
-weztrunk_agent_provider() {
-  case "${WEZTRUNK_AGENT:-codex}" in
+weztrunk_canonical_provider() {
+  case "${1:-}" in
     ''|codex)
       printf 'codex\n'
       ;;
@@ -12,9 +12,40 @@ weztrunk_agent_provider() {
       printf 'opencode\n'
       ;;
     *)
-      printf '%s\n' "${WEZTRUNK_AGENT}"
+      printf '%s\n' "$1"
       ;;
   esac
+}
+
+weztrunk_config_runner() {
+  printf '%s\n' "${WEZTRUNK_CONFIG_RUNNER:-"$HOME/.local/bin/weztrunk-config"}"
+}
+
+weztrunk_config_query() {
+  runner=$(weztrunk_config_runner)
+  if [ ! -x "$runner" ]; then
+    return 1
+  fi
+
+  "$runner" "$@"
+}
+
+weztrunk_agent_provider() {
+  if provider=$(weztrunk_config_query provider 2>/dev/null); then
+    printf '%s\n' "$provider"
+    return 0
+  fi
+
+  weztrunk_canonical_provider "${WEZTRUNK_AGENT:-codex}"
+}
+
+weztrunk_agent_profile_name() {
+  if profile=$(weztrunk_config_query profile 2>/dev/null); then
+    printf '%s\n' "$profile"
+    return 0
+  fi
+
+  printf 'deep\n'
 }
 
 weztrunk_args_root() {
@@ -28,27 +59,38 @@ weztrunk_args_file() {
 }
 
 weztrunk_find_agent_bin() {
-  if [ -n "${WEZTRUNK_AGENT_BIN:-}" ]; then
-    printf '%s\n' "$WEZTRUNK_AGENT_BIN"
+  if [ -n "${WEZTRUNK_AGENT_BIN:-${WWC_AGENT_BIN:-}}" ]; then
+    printf '%s\n' "${WEZTRUNK_AGENT_BIN:-$WWC_AGENT_BIN}"
     return 0
   fi
 
+  configured_bin=$(weztrunk_config_query provider-bin 2>/dev/null || true)
+
   case "$(weztrunk_agent_provider)" in
     codex)
-      default_bin=codex
+      default_bin=${configured_bin:-codex}
       fallback=/opt/homebrew/bin/codex
       ;;
     claude-code)
-      default_bin=claude
+      default_bin=${configured_bin:-claude}
       fallback=/opt/homebrew/bin/claude
       ;;
     opencode)
-      default_bin=opencode
+      default_bin=${configured_bin:-opencode}
       fallback=/opt/homebrew/bin/opencode
       ;;
     *)
-      default_bin=$(weztrunk_agent_provider)
+      default_bin=${configured_bin:-$(weztrunk_agent_provider)}
       fallback=
+      ;;
+  esac
+
+  case "$default_bin" in
+    */*)
+      if [ -x "$default_bin" ]; then
+        printf '%s\n' "$default_bin"
+        return 0
+      fi
       ;;
   esac
 
@@ -79,7 +121,7 @@ weztrunk_join_args() {
 }
 
 weztrunk_agent_name() {
-  printf '%s\n' "$(weztrunk_agent_provider)"
+  printf '%s/%s\n' "$(weztrunk_agent_provider)" "$(weztrunk_agent_profile_name)"
 }
 
 weztrunk_detect_appearance() {
@@ -132,10 +174,19 @@ weztrunk_codex_launch() {
 
   set -- \
     "$agent_bin" \
-    -c model_reasoning_effort='xhigh' \
     --sandbox workspace-write \
     -c sandbox_workspace_write.network_access=true \
     -c "tui.theme=\"$(weztrunk_codex_theme)\""
+
+  if extra_args=$(weztrunk_config_query args launch 2>/dev/null); then
+    old_ifs=$IFS
+    IFS='
+'
+    for line in $extra_args; do
+      [ -n "$line" ] && set -- "$@" "$line"
+    done
+    IFS=$old_ifs
+  fi
 
   if [ -r "$args_file" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
@@ -164,6 +215,16 @@ weztrunk_claude_launch() {
 
   set -- "$agent_bin"
 
+  if extra_args=$(weztrunk_config_query args launch 2>/dev/null); then
+    old_ifs=$IFS
+    IFS='
+'
+    for line in $extra_args; do
+      [ -n "$line" ] && set -- "$@" "$line"
+    done
+    IFS=$old_ifs
+  fi
+
   if [ -r "$args_file" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
       case "$line" in
@@ -190,6 +251,16 @@ weztrunk_opencode_launch() {
   args_file=$(weztrunk_args_file launch)
 
   set -- "$agent_bin"
+
+  if extra_args=$(weztrunk_config_query args launch 2>/dev/null); then
+    old_ifs=$IFS
+    IFS='
+'
+    for line in $extra_args; do
+      [ -n "$line" ] && set -- "$@" "$line"
+    done
+    IFS=$old_ifs
+  fi
 
   if [ -r "$args_file" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
@@ -225,10 +296,19 @@ weztrunk_codex_commit() {
     "$agent_bin" \
     exec \
     --skip-git-repo-check \
-    -c model_reasoning_effort='low' \
     -c system_prompt='' \
     --sandbox read-only \
     --output-last-message "$tmp"
+
+  if extra_args=$(weztrunk_config_query args commit 2>/dev/null); then
+    old_ifs=$IFS
+    IFS='
+'
+    for line in $extra_args; do
+      [ -n "$line" ] && set -- "$@" "$line"
+    done
+    IFS=$old_ifs
+  fi
 
   if [ -r "$args_file" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
@@ -253,6 +333,16 @@ weztrunk_claude_commit() {
   args_file=$(weztrunk_args_file commit)
 
   set -- "$agent_bin" -p --output-format text --tools ""
+
+  if extra_args=$(weztrunk_config_query args commit 2>/dev/null); then
+    old_ifs=$IFS
+    IFS='
+'
+    for line in $extra_args; do
+      [ -n "$line" ] && set -- "$@" "$line"
+    done
+    IFS=$old_ifs
+  fi
 
   if [ -r "$args_file" ]; then
     while IFS= read -r line || [ -n "$line" ]; do
@@ -284,6 +374,16 @@ weztrunk_opencode_commit() {
   cat > "$stdin_file"
 
   set -- "$agent_bin" run --file "$stdin_file"
+
+  if extra_args=$(weztrunk_config_query args commit 2>/dev/null); then
+    old_ifs=$IFS
+    IFS='
+'
+    for line in $extra_args; do
+      [ -n "$line" ] && set -- "$@" "$line"
+    done
+    IFS=$old_ifs
+  fi
 
   if [ -r "$args_file" ]; then
     while IFS= read -r line || [ -n "$line" ]; do

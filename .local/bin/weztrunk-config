@@ -1,0 +1,190 @@
+#!/usr/bin/env python3
+
+import os
+import sys
+import tomllib
+from pathlib import Path
+
+
+CONFIG_PATH = Path(
+    os.environ.get("WEZTRUNK_CONFIG_PATH", str(Path.home() / ".config/weztrunk/config.toml"))
+)
+
+PROVIDER_ALIASES = {
+    "": "codex",
+    "codex": "codex",
+    "claude": "claude-code",
+    "claude-code": "claude-code",
+    "open-code": "opencode",
+    "opencode": "opencode",
+}
+
+DEFAULTS = {
+    "codex": {"bin": "codex", "profile": "deep"},
+    "claude-code": {"bin": "claude", "profile": "deep"},
+    "opencode": {"bin": "opencode", "profile": "deep"},
+}
+
+
+def canonical_provider(name: str | None) -> str:
+    value = (name or "").strip()
+    return PROVIDER_ALIASES.get(value, value or "codex")
+
+
+def load_config() -> dict:
+    if not CONFIG_PATH.exists():
+        return {}
+    with CONFIG_PATH.open("rb") as handle:
+        return tomllib.load(handle)
+
+
+def provider_table(config: dict, provider: str) -> dict:
+    return config.get("providers", {}).get(provider, {})
+
+
+def profile_table(config: dict, provider: str, profile: str) -> dict:
+    return config.get("profiles", {}).get(provider, {}).get(profile, {})
+
+
+def resolve_provider(config: dict) -> str:
+    return canonical_provider(
+        os.environ.get("WEZTRUNK_AGENT") or config.get("agent", {}).get("provider") or "codex"
+    )
+
+
+def resolve_profile(config: dict, provider: str, explicit: str | None = None) -> str:
+    profile_name = (
+        explicit
+        or os.environ.get("WEZTRUNK_PROFILE")
+        or config.get("agent", {}).get("profile")
+        or provider_table(config, provider).get("default_profile")
+        or DEFAULTS.get(provider, {}).get("profile")
+        or "deep"
+    )
+    profiles = config.get("profiles", {}).get(provider, {})
+    if profiles and profile_name not in profiles:
+        available = ", ".join(sorted(profiles))
+        raise SystemExit(
+            f"Unknown WezTrunk profile '{profile_name}' for provider '{provider}'. "
+            f"Available: {available}"
+        )
+    return profile_name
+
+
+def resolve_bin(config: dict, provider: str) -> str:
+    return (
+        os.environ.get("WEZTRUNK_AGENT_BIN")
+        or os.environ.get("WWC_AGENT_BIN")
+        or provider_table(config, provider).get("bin")
+        or DEFAULTS.get(provider, {}).get("bin")
+        or provider
+    )
+
+
+def current_description(config: dict, provider: str, profile: str) -> str:
+    return profile_table(config, provider, profile).get("description", "")
+
+
+def emit_current(config: dict) -> int:
+    provider = resolve_provider(config)
+    profile = resolve_profile(config, provider)
+    description = current_description(config, provider, profile)
+    print(f"Config: {CONFIG_PATH}")
+    print(f"Provider: {provider}")
+    print(f"Profile: {profile}")
+    print(f"Binary: {resolve_bin(config, provider)}")
+    if description:
+        print(f"Description: {description}")
+    return 0
+
+
+def emit_profiles(config: dict, provider: str | None) -> int:
+    profiles_root = config.get("profiles", {})
+    providers = [canonical_provider(provider)] if provider else sorted(profiles_root)
+    for provider_name in providers:
+        for profile_name in sorted(profiles_root.get(provider_name, {})):
+            description = profile_table(config, provider_name, profile_name).get("description", "")
+            print(f"{provider_name}/{profile_name}  {description}")
+    return 0
+
+
+def emit_args(config: dict, mode: str, provider_arg: str | None, profile_arg: str | None) -> int:
+    if mode not in {"launch", "commit"}:
+        raise SystemExit("Usage: weztrunk-config args <launch|commit> [provider] [profile]")
+    provider = canonical_provider(provider_arg) if provider_arg else resolve_provider(config)
+    profile = resolve_profile(config, provider, explicit=profile_arg)
+    key = f"{mode}_args"
+    for item in profile_table(config, provider, profile).get(key, []):
+        print(item)
+    return 0
+
+
+def emit_description(config: dict, provider_arg: str | None, profile_arg: str | None) -> int:
+    provider = canonical_provider(provider_arg) if provider_arg else resolve_provider(config)
+    profile = resolve_profile(config, provider, explicit=profile_arg)
+    description = current_description(config, provider, profile)
+    if description:
+        print(description)
+    return 0
+
+
+def usage() -> int:
+    print(
+        "Usage: weztrunk-config <path|provider|profile|provider-bin|describe|args|profiles|current>",
+        file=sys.stderr,
+    )
+    return 64
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) < 2:
+        return usage()
+
+    config = load_config()
+    command = argv[1]
+
+    if command == "path":
+        print(CONFIG_PATH)
+        return 0
+
+    if command == "provider":
+        print(resolve_provider(config))
+        return 0
+
+    if command == "profile":
+        provider_arg = argv[2] if len(argv) > 2 else None
+        provider = canonical_provider(provider_arg) if provider_arg else resolve_provider(config)
+        print(resolve_profile(config, provider))
+        return 0
+
+    if command == "provider-bin":
+        provider_arg = argv[2] if len(argv) > 2 else None
+        provider = canonical_provider(provider_arg) if provider_arg else resolve_provider(config)
+        print(resolve_bin(config, provider))
+        return 0
+
+    if command == "describe":
+        provider_arg = argv[2] if len(argv) > 2 else None
+        profile_arg = argv[3] if len(argv) > 3 else None
+        return emit_description(config, provider_arg, profile_arg)
+
+    if command == "args":
+        if len(argv) < 3:
+            raise SystemExit("Usage: weztrunk-config args <launch|commit> [provider] [profile]")
+        mode = argv[2]
+        provider_arg = argv[3] if len(argv) > 3 else None
+        profile_arg = argv[4] if len(argv) > 4 else None
+        return emit_args(config, mode, provider_arg, profile_arg)
+
+    if command == "profiles":
+        provider_arg = argv[2] if len(argv) > 2 else None
+        return emit_profiles(config, provider_arg)
+
+    if command == "current":
+        return emit_current(config)
+
+    return usage()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main(sys.argv))

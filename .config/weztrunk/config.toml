@@ -1,0 +1,50 @@
+[agent]
+provider = "codex"
+profile = "deep"
+
+[providers.codex]
+bin = "codex"
+default_profile = "deep"
+
+[providers."claude-code"]
+bin = "claude"
+default_profile = "deep"
+
+[providers.opencode]
+bin = "opencode"
+default_profile = "deep"
+
+[profiles.codex.deep]
+description = "GPT-5.4 with search and xhigh reasoning for longer sessions."
+launch_args = ["--search", "-m", "gpt-5.4", "-c", "model_reasoning_effort='xhigh'"]
+commit_args = ["-m", "gpt-5.4-mini", "-c", "model_reasoning_effort='low'"]
+
+[profiles.codex.fast]
+description = "GPT-5.4-mini with medium reasoning for cheaper iteration."
+launch_args = ["-m", "gpt-5.4-mini", "-c", "model_reasoning_effort='medium'"]
+commit_args = ["-m", "gpt-5.4-mini", "-c", "model_reasoning_effort='low'"]
+
+[profiles.codex.review]
+description = "GPT-5.4 with search and high reasoning for repo review."
+launch_args = ["--search", "-m", "gpt-5.4", "-c", "model_reasoning_effort='high'"]
+commit_args = ["-m", "gpt-5.4-mini", "-c", "model_reasoning_effort='low'"]
+
+[profiles."claude-code".deep]
+description = "Claude Code on Sonnet with acceptEdits and high effort."
+launch_args = ["--model", "sonnet", "--permission-mode", "acceptEdits", "--effort", "high"]
+commit_args = ["--model", "haiku"]
+
+[profiles."claude-code".fast]
+description = "Claude Code on Sonnet with acceptEdits."
+launch_args = ["--model", "sonnet", "--permission-mode", "acceptEdits"]
+commit_args = ["--model", "haiku"]
+
+[profiles.opencode.deep]
+description = "OpenCode on Sonnet 4.5 with the high variant."
+launch_args = ["--model", "anthropic/claude-sonnet-4-5", "--variant", "high"]
+commit_args = ["--model", "anthropic/claude-haiku-4-5"]
+
+[profiles.opencode.fast]
+description = "OpenCode on Claude Haiku 4.5."
+launch_args = ["--model", "anthropic/claude-haiku-4-5"]
+commit_args = ["--model", "anthropic/claude-haiku-4-5"]

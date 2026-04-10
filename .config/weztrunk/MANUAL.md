@@ -8,140 +8,112 @@ WezTrunk is three things glued together:
 
 ## Daily Use
 
-From WezTerm:
-
 - `Cmd+Shift+G`: open the Worktrunk picker and launch or re-attach the agent
 - `Cmd+B g`: same action on the leader layer
 - `Cmd+B G`: create a branch/worktree, then launch the agent
 - `Cmd+Shift+M`: open this manual in a new tab
 - `Cmd+B m`: same manual action on the leader layer
-
-From the shell:
-
 - `wtx`: open the Worktrunk picker and launch the agent
 - `wtx feature-x`: switch to a branch worktree and launch the agent there
 - `wtn feature-x`: create a branch/worktree and launch the agent
 - `wtx feature-x -- 'Fix flaky test'`: pass an initial prompt into the agent
 - `weztrunk man`: open this manual
 - `weztrunk man remove`: search this manual for a topic
+- `weztrunk profile`: show the active provider/profile
+- `weztrunk profile list`: list the named profiles from `config.toml`
 - `wthelp` or `wtm`: same manual command
-
-From Worktrunk directly:
-
 - `wt step weztrunk-agent`: re-attach the current worktree's agent session
 - `wt step weztrunk-hydrate`: copy gitignored files into the current worktree on demand
 - `wt step weztrunk-manual`: print this manual from inside a repo
 
-## Common Tasks
+## Shell
 
-Close or remove the current worktree:
+- `wtx`: picker + launch or re-attach the agent
+- `wtx main`: jump straight to an existing worktree
+- `wtn feature-x`: create a branch/worktree and launch the agent
+- `weztrunk man profiles`: jump straight to the profile section
+- `weztrunk profile`: show the active provider/profile/binary
+- `weztrunk profile list`: list all named profiles
+- `wtp`: short alias for `weztrunk profile`
+
+## WezTerm
+
+- `Cmd+Shift+G`: Worktrunk picker + launch/re-attach agent
+- `Cmd+B g`: same action on the leader layer
+- `Cmd+B G`: prompt for a branch name, create the worktree, then launch the agent
+- `Cmd+Shift+M`: open the full manual in a new tab
+- `Cmd+Shift+/`: prompt for a topic and open a focused manual search in a new tab
+- `Cmd+Shift+P`, then type `Worktrunk`: self-documented command-palette entries
+
+## Worktrunk Tasks
+
+### Remove Or Close A Worktree
 
 - `wt remove`
 - `wt remove --no-delete-branch`: remove the worktree but keep the branch
 - `wt remove -f`: remove even if the worktree has untracked files
 - `wt remove -D`: allow deletion of an unmerged branch
 
-Merge the current worktree back and clean it up:
+### Merge A Worktree
 
 - `wt merge`
 - `wt merge --no-remove`: merge but keep the worktree around
 - `wt merge develop`: merge into a non-default target branch
 
-Jump around worktrees:
+### Switch Or Create Worktrees
 
-- `wtx`: picker + launch or re-attach the agent
 - `wtx main`: jump straight to an existing worktree
 - `wtn feature-x`: create a branch/worktree and launch the agent
+- `weztrunk switch pick "$PWD"`: raw picker helper if you want the lower-level path
 
-Recover or inspect agent sessions:
+### Sessions
 
 - `wt step weztrunk-agent`: re-attach the current worktree session
-- `weztrunk man session`: search this manual for session details
+- `weztrunk man session`: jump to this section
+- each repo/branch gets a separate `dtach` socket
+- `wt remove` and `wt merge` trigger a Worktrunk `post-remove` hook that cleans up the branch session socket
 
-## Agent Selection
+## Profiles
 
-The active provider comes from `WEZTRUNK_AGENT`.
+The active provider/profile now comes from `~/.config/weztrunk/config.toml`.
 
-Built-in values:
+Default file:
+
+```toml
+[agent]
+provider = "codex"
+profile = "deep"
+```
+
+Built-in providers:
 
 - `codex`
 - `claude-code`
 - `opencode`
 
-Examples:
+Useful commands:
 
-```sh
-export WEZTRUNK_AGENT=codex
-export WEZTRUNK_AGENT=claude-code
-export WEZTRUNK_AGENT=opencode
-```
+- `weztrunk profile`: show the active provider/profile/binary
+- `weztrunk profile list`: list all named profiles
+- `weztrunk profile list codex`: list only Codex profiles
+- `weztrunk man profiles`: jump back to this section
 
-If the executable name differs from the provider name, set:
+Simple overrides:
 
-```sh
-export WEZTRUNK_AGENT_BIN=/custom/path/to/agent
-```
+- `WEZTRUNK_AGENT=claude-code`: override only the provider
+- `WEZTRUNK_PROFILE=fast`: override only the named profile
+- `WEZTRUNK_AGENT_BIN=/custom/path/to/agent`: override the executable path
 
-## Extra Flags
-
-Provider-specific extra flags live under:
+Legacy local overlays still work and are appended after the TOML profile:
 
 - `~/.config/weztrunk/providers/<provider>/launch.args`
 - `~/.config/weztrunk/providers/<provider>/commit.args`
 
-Each non-comment line is one CLI argument.
-
-Example `claude-code/launch.args`:
-
-```text
---model
-sonnet
---permission-mode
-acceptEdits
-```
-
-Example `opencode/launch.args`:
-
-```text
---model
-anthropic/claude-sonnet-4-5
---variant
-high
-```
-
-Example `codex/launch.args`:
-
-```text
--m
-gpt-5.4
-```
-
-These files are appended to WezTrunk's built-in provider defaults. They are the intended place to put model, permission, effort, or provider-specific runtime flags.
-
-## Built-In Provider Behavior
-
-`codex`
-
-- interactive sessions default to `workspace-write` plus network-enabled sandbox
-- commit generation uses `codex exec`
-
-`claude-code`
-
-- interactive sessions default to plain `claude`
-- commit generation uses `claude -p` with tools disabled
-
-`opencode`
-
-- interactive sessions default to plain `opencode`
-- commit generation uses `opencode run` with the Worktrunk prompt attached as a temporary file
+That is the right place for machine-local extras you do not want in the shared `config.toml`.
 
 ## Custom Providers
 
-If you want a different CLI entirely, create:
-
-- `~/.config/weztrunk/agent-profile.local.sh`
-
-Then define:
+If you want a different CLI entirely, create `~/.config/weztrunk/agent-profile.local.sh` and define:
 
 ```sh
 weztrunk_custom_agent_launch() {
@@ -158,13 +130,9 @@ weztrunk_custom_agent_commit() {
 
 This keeps the tracked `agent-profile.sh` generic while still allowing repo-local overrides.
 
-## Session Model
+## Sleep Guard
 
-- each repo/branch gets a separate `dtach` socket
 - the session survives terminal closes and tab closes
-- `wt remove` and `wt merge` trigger a Worktrunk `post-remove` hook that cleans up the branch session socket
-
-Sleep inhibition:
 
 - macOS uses `caffeinate -s` when available
 - Linux uses `systemd-inhibit --what=sleep` when available
@@ -172,16 +140,15 @@ Sleep inhibition:
 
 ## Manual Search
 
-Search the manual from the shell:
-
 - `weztrunk man remove`
 - `weztrunk man merge`
 - `weztrunk man session`
-- `weztrunk man provider`
+- `weztrunk man profiles`
+- `weztrunk man wezterm`
 
 Useful flags:
 
-- `weztrunk man --topics`: list section headings only
+- `weztrunk man --topics`: list the built-in quick topics
 - `weztrunk man --raw`: print the full Markdown source
 - `weztrunk man --path`: print the manual file path
 
@@ -198,6 +165,7 @@ If a repo update adds new linked files, rerun `bash scripts/install.sh` once on 
 ## Useful Paths
 
 - manual: `~/.config/weztrunk/MANUAL.md`
+- config: `~/.config/weztrunk/config.toml`
 - profile: `~/.config/weztrunk/agent-profile.sh`
 - local override: `~/.config/weztrunk/agent-profile.local.sh`
 - provider flags: `~/.config/weztrunk/providers/`

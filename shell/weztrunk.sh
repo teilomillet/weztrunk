@@ -55,4 +55,16 @@ wtman() {
   wthelp "$@"
 }
 
+wtprofile() {
+  weztrunk_cmd="$HOME/.local/bin/weztrunk"
+
+  if [ ! -x "$weztrunk_cmd" ]; then
+    printf 'WezTrunk command not found: %s\n' "$weztrunk_cmd" >&2
+    return 1
+  fi
+
+  "$weztrunk_cmd" profile "$@"
+}
+
 alias wtm='wtman'
+alias wtp='wtprofile'

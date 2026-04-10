@@ -9,6 +9,45 @@ if [ ! -r "$manual_path" ]; then
   exit 127
 fi
 
+normalize_topic() {
+  printf '%s' "$*" | tr '[:upper:]' '[:lower:]' | tr -s '[:space:]' ' ' | sed 's/^ //; s/ $//'
+}
+
+topic_heading() {
+  case "$(normalize_topic "$*")" in
+    daily|overview)
+      printf 'daily use\n'
+      ;;
+    shell|alias|aliases)
+      printf 'shell\n'
+      ;;
+    wezterm|keys|keybindings|shortcuts)
+      printf 'wezterm\n'
+      ;;
+    remove|close|delete|cleanup)
+      printf 'remove or close a worktree\n'
+      ;;
+    merge)
+      printf 'merge a worktree\n'
+      ;;
+    switch|create|branch|worktree)
+      printf 'switch or create worktrees\n'
+      ;;
+    session|sessions|socket|dtach|resume)
+      printf 'sessions\n'
+      ;;
+    profile|profiles|provider|providers|model|config)
+      printf 'profiles\n'
+      ;;
+    install|setup|sync|propagate|propagation|update)
+      printf 'propagating changes\n'
+      ;;
+    *)
+      printf '\n'
+      ;;
+  esac
+}
+
 show_with_pager() {
   if [ -t 1 ] && command -v glow >/dev/null 2>&1; then
     exec glow -p "$manual_path"
@@ -25,8 +64,66 @@ show_with_pager() {
   exec cat "$manual_path"
 }
 
+page_stdin() {
+  if [ -t 1 ] && command -v bat >/dev/null 2>&1; then
+    bat --paging=always --language=markdown -
+    return
+  fi
+
+  if [ -t 1 ] && command -v less >/dev/null 2>&1; then
+    sh -c '${PAGER:-less -R}'
+    return
+  fi
+
+  cat
+}
+
+extract_section() {
+  heading=$1
+
+  awk -v target="$heading" '
+    function heading_level(line,   count) {
+      count = 0
+      while (substr(line, count + 1, 1) == "#") {
+        count++
+      }
+      return count
+    }
+
+    /^#+ / {
+      current_level = heading_level($0)
+      current_heading = substr($0, current_level + 2)
+
+      if (found && current_level <= target_level) {
+        exit
+      }
+
+      if (tolower(current_heading) == target) {
+        found = 1
+        target_level = current_level
+        print
+        next
+      }
+    }
+
+    found {
+      print
+    }
+  ' "$manual_path"
+}
+
 show_topics() {
-  exec rg -n '^## ' "$manual_path"
+  cat <<'EOF'
+daily      overview and day-to-day commands
+shell      shell aliases and helpers
+wezterm    keybindings and command palette
+remove     close or delete a worktree
+merge      merge a worktree back
+switch     switch or create worktrees
+session    detached agent sessions and cleanup
+profiles   provider/profile config and examples
+install    propagation, install, and sync
+EOF
 }
 
 search_manual() {
@@ -34,6 +131,15 @@ search_manual() {
 
   if [ -z "$query" ]; then
     show_with_pager
+  fi
+
+  heading=$(topic_heading "$query")
+  if [ -n "$heading" ]; then
+    section=$(extract_section "$heading")
+    if [ -n "$section" ]; then
+      printf '%s\n' "$section" | page_stdin
+      exit 0
+    fi
   fi
 
   if [ -t 1 ] && command -v less >/dev/null 2>&1; then

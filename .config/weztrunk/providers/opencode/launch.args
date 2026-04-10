@@ -1,1 +1,9 @@
---version
+# Optional legacy overlay for interactive OpenCode launch arguments.
+# One CLI argument per line.
+#
+# Prefer ~/.config/weztrunk/config.toml for shared profiles first.
+# Use this file only for machine-local extras.
+#
+# Example:
+# --model
+# anthropic/claude-sonnet-4-5
