@@ -12,8 +12,8 @@ local function with_orange_accent(base_name, normal_orange, bright_orange)
     return nil
   end
 
-  scheme.ansi[3] = normal_orange
-  scheme.brights[3] = bright_orange
+  scheme.ansi[7] = normal_orange
+  scheme.brights[7] = bright_orange
 
   return scheme
 end
