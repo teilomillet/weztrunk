@@ -268,8 +268,8 @@ config.color_schemes = {
   ),
   ['WezTrunk Gruvbox Light Orange'] = with_orange_accent(
     'Gruvbox light, hard (base16)',
-    '#b85c00',
-    '#d97706'
+    '#d97706',
+    '#f59e0b'
   ),
 }
 config.color_scheme = scheme_for_appearance(get_appearance())
