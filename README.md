@@ -192,6 +192,8 @@ weztrunk upkeep status
 
 `wtx` and `wtn` call `weztrunk upkeep maybe --quiet` before switching or creating a worktree. The command checks `[upkeep]` in `config.toml`; with `mode = "opportunistic"`, it runs `backup snapshot` and `repos pull` only if `interval_seconds` has elapsed. No daemon, login item, root privileges, launchd job, or systemd timer is required.
 
+By default, opportunistic upkeep also runs one `reconcile watch-all --once` manager pass. The practical rule is simple: clean worktrees may be fast-forwarded, dirty worktrees are never rewritten, and their current state gets a fresh scratch candidate on top of `origin/main`.
+
 ## Dirty-Work Backup
 
 Backups are local snapshots under `~/.local/state/weztrunk/work-backups` by default. For each dirty watched repo, the snapshot includes:
@@ -232,6 +234,8 @@ weztrunk reconcile watch-all --interval 30 --stable 5
 `watch` is the manager mode for work that is still moving. It fingerprints the active checkout, waits until it is stable, then runs `current` from that exact state. If files change while the scratch rebase is being created, it waits and tries again. This keeps an integration worktree on top of `origin/main` without rewriting the worktree your editor or another agent is using.
 
 `watch-all` does the same repo-manager work across all worktrees in the watched repos. Clean worktrees are fast-forwarded when Git can do that safely. Dirty, diverged, detached, and scratch worktrees are not rewritten; dirty or diverged worktrees get fresh reconcile candidates instead.
+
+The bitter lesson for assistants is part of the model: a reconcile worktree is the integration candidate, not a random side branch. It should be `origin/main` first, then the user's work above it, with conflicts resolved there so the result can be reviewed and promoted by fast-forward. The active dirty worktree stays as the live editing surface until promotion is intentional.
 
 When the rebase or patch application conflicts, `--agent conflict` launches the configured code agent in the scratch worktree with instructions to resolve the integration. Review the scratch branch before merging or replacing your original branch.
 
@@ -292,6 +296,8 @@ mode = "opportunistic"
 interval_seconds = 1800
 pull = true
 backup = true
+reconcile = true
+reconcile_agent = "never"
 ```
 
 If you want machine-local extras after the named TOML profile, edit the matching files under [`providers/`](./.config/weztrunk/providers), for example:

@@ -10,6 +10,8 @@ mode = "opportunistic"
 interval_seconds = 1800
 pull = true
 backup = true
+reconcile = true
+reconcile_agent = "never"
 
 [providers.codex]
 bin = "codex"

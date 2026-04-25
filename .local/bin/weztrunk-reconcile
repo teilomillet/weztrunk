@@ -4,6 +4,7 @@ set -u
 
 config_path=${WEZTRUNK_REPOS_PATH:-"$HOME/.config/weztrunk/repos.txt"}
 runner=${WEZTRUNK_WORKTRUNK_RUNNER:-"$HOME/.local/bin/wt-code"}
+reconcile_state_dir=${WEZTRUNK_RECONCILE_STATE_DIR:-"${XDG_STATE_HOME:-$HOME/.local/state}/weztrunk/reconcile"}
 agent_mode=conflict
 repo_arg=
 base_ref=
@@ -192,6 +193,32 @@ dirty_fingerprint_for() {
   } | hash_stdin
 }
 
+fingerprint_key_for() {
+  printf '%s\t%s' "$1" "$2" | hash_stdin
+}
+
+fingerprint_file_for() {
+  printf '%s/fingerprints/%s\n' "$reconcile_state_dir" "$1"
+}
+
+read_synced_fingerprint() {
+  local key file
+  key=$1
+  file=$(fingerprint_file_for "$key")
+  if [ -r "$file" ]; then
+    sed -n '1p' "$file"
+  fi
+}
+
+write_synced_fingerprint() {
+  local key fingerprint file
+  key=$1
+  fingerprint=$2
+  file=$(fingerprint_file_for "$key")
+  mkdir -p "$(dirname "$file")" || return 1
+  printf '%s\n' "$fingerprint" > "$file"
+}
+
 origin_head_for() {
   local repo head
   repo=$1
@@ -307,6 +334,7 @@ launch_agent() {
 Goal:
 - Keep the user's work on top of ${base}.
 - Resolve any rebase, patch, or semantic conflicts.
+- Treat this worktree as the integration candidate: base first, user work above it, ready to be reviewed and promoted by fast-forward.
 - Preserve the active/original worktree; only edit this scratch worktree.
 - Commit the resolved result on ${scratch_branch}.
 - Do not push.
@@ -539,7 +567,7 @@ sync_worktree_once() {
 }
 
 sync_all_repo_once() {
-  local repo root base rows path branch
+  local repo root base rows path branch key before after previous
   repo=$1
 
   if ! root=$(repo_root_for "$repo"); then
@@ -559,7 +587,21 @@ sync_all_repo_once() {
   worktree_rows_for_repo "$root" > "$rows"
   while IFS="$(printf '\t')" read -r path branch; do
     [ -n "$path" ] || continue
-    sync_worktree_once "$root" "$path" "$branch" "$base"
+    if [ "$branch" != "detached" ] && ! is_reconcile_branch "$branch"; then
+      key=$(fingerprint_key_for "$root" "$path")
+      before=$(dirty_fingerprint_for "$path" "$base")
+      previous=$(read_synced_fingerprint "$key")
+      if [ "$before" = "$previous" ]; then
+        printf 'ok %s: reconcile snapshot unchanged\n' "$path"
+        continue
+      fi
+      if sync_worktree_once "$root" "$path" "$branch" "$base"; then
+        after=$(dirty_fingerprint_for "$path" "$base")
+        write_synced_fingerprint "$key" "$after" || return 1
+      fi
+    else
+      sync_worktree_once "$root" "$path" "$branch" "$base"
+    fi
   done < "$rows"
   rm -f "$rows"
 }

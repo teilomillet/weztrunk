@@ -5,6 +5,7 @@ set -u
 config_runner=${WEZTRUNK_CONFIG_RUNNER:-"$HOME/.local/bin/weztrunk-config"}
 repos_runner=${WEZTRUNK_REPOS_RUNNER:-"$HOME/.local/bin/weztrunk-repos"}
 backup_runner=${WEZTRUNK_BACKUP_RUNNER:-"$HOME/.local/bin/weztrunk-backup"}
+reconcile_runner=${WEZTRUNK_RECONCILE_RUNNER:-"$HOME/.local/bin/weztrunk-reconcile"}
 state_dir=${WEZTRUNK_UPKEEP_STATE_DIR:-"${XDG_STATE_HOME:-$HOME/.local/state}/weztrunk/upkeep"}
 quiet=0
 force=0
@@ -99,6 +100,8 @@ run_step() {
 run_upkeep() {
   pull_enabled=$(config_get upkeep.pull true)
   backup_enabled=$(config_get upkeep.backup true)
+  reconcile_enabled=$(config_get upkeep.reconcile true)
+  reconcile_agent=$(config_get upkeep.reconcile_agent never)
   rc=0
 
   mkdir -p "$state_dir" || return 1
@@ -121,6 +124,15 @@ run_upkeep() {
       run_step 'repos pull' "$repos_runner" pull || rc=1
     else
       [ "$quiet" -eq 1 ] || printf 'skip pull: %s not found\n' "$repos_runner" >&2
+      rc=1
+    fi
+  fi
+
+  if is_true "$reconcile_enabled"; then
+    if [ -x "$reconcile_runner" ]; then
+      run_step 'reconcile manager' "$reconcile_runner" watch-all --once --agent "$reconcile_agent" || rc=1
+    else
+      [ "$quiet" -eq 1 ] || printf 'skip reconcile: %s not found\n' "$reconcile_runner" >&2
       rc=1
     fi
   fi
@@ -167,6 +179,8 @@ status_upkeep() {
   interval=${interval_override:-$(config_get upkeep.interval_seconds 1800)}
   pull_enabled=$(config_get upkeep.pull true)
   backup_enabled=$(config_get upkeep.backup true)
+  reconcile_enabled=$(config_get upkeep.reconcile true)
+  reconcile_agent=$(config_get upkeep.reconcile_agent never)
   now=$(now_seconds)
   last=$(read_last_run)
   is_uint "$last" || last=0
@@ -175,6 +189,8 @@ status_upkeep() {
   printf 'interval_seconds: %s\n' "$interval"
   printf 'pull: %s\n' "$pull_enabled"
   printf 'backup: %s\n' "$backup_enabled"
+  printf 'reconcile: %s\n' "$reconcile_enabled"
+  printf 'reconcile_agent: %s\n' "$reconcile_agent"
   printf 'state_dir: %s\n' "$state_dir"
   printf 'last_run_epoch: %s\n' "$last"
   if [ "$last" -gt 0 ]; then

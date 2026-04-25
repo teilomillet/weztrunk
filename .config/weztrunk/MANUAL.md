@@ -178,6 +178,8 @@ weztrunk upkeep status
 
 `wtx` and `wtn` call `weztrunk upkeep maybe --quiet` before switching or creating a worktree. The command checks `[upkeep]` in `config.toml`; with `mode = "opportunistic"`, it runs `backup snapshot` and `repos pull` only if `interval_seconds` has elapsed. No daemon, login item, root privileges, launchd job, or systemd timer is required.
 
+By default, opportunistic upkeep also runs one `reconcile watch-all --once` manager pass. Clean worktrees may be fast-forwarded, dirty worktrees are never rewritten, and their current state gets a fresh scratch candidate on top of `origin/main`.
+
 ## Reconcile Work
 
 Reconcile creates a scratch integration worktree so your active worktree is not rewritten while conflicts are being resolved.
@@ -198,6 +200,8 @@ wtr status
 `watch` is the manager mode for work that is still moving. It fingerprints the active checkout, waits until it is stable, then runs `current` from that exact state. If files change while the scratch rebase is being created, it waits and tries again. This keeps an integration worktree on top of `origin/main` without rewriting the worktree your editor or another agent is using.
 
 `watch-all` does the same repo-manager work across all worktrees in the watched repos. Clean worktrees are fast-forwarded when Git can do that safely. Dirty, diverged, detached, and scratch worktrees are not rewritten; dirty or diverged worktrees get fresh reconcile candidates instead.
+
+The bitter lesson for assistants: a reconcile worktree is the integration candidate, not a random side branch. It should be `origin/main` first, then the user's work above it, with conflicts resolved there so the result can be reviewed and promoted by fast-forward. The active dirty worktree stays as the live editing surface until promotion is intentional.
 
 With `--agent conflict`, WezTrunk launches the configured code agent only when patch application or rebase conflicts need help. With `--agent always`, it launches the agent even when the rebase succeeds, for review and cleanup.
 
