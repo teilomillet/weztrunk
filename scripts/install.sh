@@ -78,6 +78,7 @@ link_file "$repo_root/.local/bin/weztrunk-manual" "$HOME/.local/bin/weztrunk-man
 link_file "$repo_root/.local/bin/weztrunk-reconcile" "$HOME/.local/bin/weztrunk-reconcile"
 link_file "$repo_root/.local/bin/weztrunk-repos" "$HOME/.local/bin/weztrunk-repos"
 link_file "$repo_root/.local/bin/weztrunk-switch" "$HOME/.local/bin/weztrunk-switch"
+link_file "$repo_root/.local/bin/weztrunk-upkeep" "$HOME/.local/bin/weztrunk-upkeep"
 link_file "$repo_root/.local/bin/wt-code" "$HOME/.local/bin/wt-code"
 link_file "$repo_root/.local/bin/worktrunk-code-commit" "$HOME/.local/bin/worktrunk-code-commit"
 link_file "$repo_root/.config/systemd/user/weztrunk-repos-pull.service" "$HOME/.config/systemd/user/weztrunk-repos-pull.service"
@@ -97,6 +98,7 @@ chmod +x \
   "$HOME/.local/bin/weztrunk-doctor" \
   "$HOME/.local/bin/weztrunk-reconcile" \
   "$HOME/.local/bin/weztrunk-switch" \
+  "$HOME/.local/bin/weztrunk-upkeep" \
   "$HOME/.local/bin/weztrunk-repos" \
   "$HOME/.local/bin/wt-code" \
   "$HOME/.local/bin/worktrunk-code-commit"

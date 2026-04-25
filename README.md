@@ -34,6 +34,7 @@ The name stays agent-neutral on purpose. The current default implementation targ
 - [`.local/bin/weztrunk-manual`](./.local/bin/weztrunk-manual): manual viewer for shell and WezTerm.
 - [`.local/bin/weztrunk-reconcile`](./.local/bin/weztrunk-reconcile): scratch-worktree rebase and conflict-resolution launcher.
 - [`.local/bin/weztrunk-repos`](./.local/bin/weztrunk-repos): repo status, safe pull, and timer management.
+- [`.local/bin/weztrunk-upkeep`](./.local/bin/weztrunk-upkeep): opportunistic pull/backup maintenance without a scheduler.
 - [`.local/bin/wt-code`](./.local/bin/wt-code): detached interactive agent launcher.
 - [`.local/bin/worktrunk-code-commit`](./.local/bin/worktrunk-code-commit): non-interactive commit-message helper.
 - [`scripts/install.sh`](./scripts/install.sh): symlink-based installer with backups.
@@ -55,11 +56,11 @@ brew install wezterm worktrunk dtach gh
 
 The default profile expects `codex` to already be installed and authenticated.
 
-Sleep inhibition is optional but recommended:
+Sleep inhibition is optional and controlled by `[sleep] guard` in `config.toml`:
 
 - macOS: `caffeinate` is used automatically via `/usr/bin/caffeinate -s` when present
 - Linux: `systemd-inhibit --what=sleep` is used automatically when present
-- otherwise, sessions still work but the machine may sleep normally
+- `guard = "none"` leaves sleep behavior alone, which is the tracked default for managed-work-machine friendliness
 
 ## Install
 
@@ -104,6 +105,8 @@ If you are upgrading an older install, rerun the installer once. This version ad
 - `weztrunk repos timer enable`: start the user-level auto-pull timer
 - `weztrunk backup snapshot`: snapshot dirty watched repos into local state
 - `weztrunk backup timer enable`: start the user-level dirty-work backup timer
+- `weztrunk upkeep maybe`: opportunistic pull/backup, throttled by config
+- `weztrunk upkeep status`: show the current opportunistic upkeep state
 - `weztrunk reconcile status`: show watched worktrees and whether they are on top of the base branch
 - `weztrunk reconcile current --agent conflict`: create a scratch reconciliation worktree for the current repo
 - `weztrunk reconcile watch`: keep creating fresh scratch reconciliation worktrees while the current repo changes
@@ -176,6 +179,18 @@ weztrunk repos timer disable
 The pull command fetches each repo, then fast-forwards only when the current branch is clean and behind its upstream. It skips repos with local changes, detached HEADs, missing upstreams, or diverged branches.
 
 On Linux with systemd user services, `weztrunk repos timer enable` starts a timer that runs shortly after login and then every five minutes. When `notify-send` is available, timer runs use desktop notifications for skipped repos.
+
+## Opportunistic Upkeep
+
+For managed Macs or any machine where a persistent login scheduler is undesirable, use opportunistic upkeep instead of launchd/systemd timers. It runs only from normal terminal commands and is throttled by a timestamp under `~/.local/state/weztrunk/upkeep`.
+
+```bash
+weztrunk upkeep maybe
+weztrunk upkeep run
+weztrunk upkeep status
+```
+
+`wtx` and `wtn` call `weztrunk upkeep maybe --quiet` before switching or creating a worktree. The command checks `[upkeep]` in `config.toml`; with `mode = "opportunistic"`, it runs `backup snapshot` and `repos pull` only if `interval_seconds` has elapsed. No daemon, login item, root privileges, launchd job, or systemd timer is required.
 
 ## Dirty-Work Backup
 
@@ -262,11 +277,21 @@ weztrunk profile list
 weztrunk profile list codex
 ```
 
-Simple overrides:
+The normal way to change defaults is to edit `~/.config/weztrunk/config.toml`:
 
-```bash
-export WEZTRUNK_AGENT=claude-code
-export WEZTRUNK_PROFILE=fast
+```toml
+[agent]
+provider = "claude-code"
+profile = "fast"
+
+[sleep]
+guard = "none"
+
+[upkeep]
+mode = "opportunistic"
+interval_seconds = 1800
+pull = true
+backup = true
 ```
 
 If you want machine-local extras after the named TOML profile, edit the matching files under [`providers/`](./.config/weztrunk/providers), for example:
@@ -277,7 +302,7 @@ If you want machine-local extras after the named TOML profile, edit the matching
 
 For custom providers, add `~/.config/weztrunk/agent-profile.local.sh` and define `weztrunk_custom_agent_launch()` / `weztrunk_custom_agent_commit()`. The built-in manual covers that flow.
 
-Useful environment overrides:
+Environment overrides are still accepted for temporary one-off sessions:
 
 - `WEZTRUNK_AGENT`: provider name
 - `WEZTRUNK_PROFILE`: profile name inside that provider

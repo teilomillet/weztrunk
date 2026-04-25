@@ -1,0 +1,221 @@
+#!/bin/sh
+
+set -u
+
+config_runner=${WEZTRUNK_CONFIG_RUNNER:-"$HOME/.local/bin/weztrunk-config"}
+repos_runner=${WEZTRUNK_REPOS_RUNNER:-"$HOME/.local/bin/weztrunk-repos"}
+backup_runner=${WEZTRUNK_BACKUP_RUNNER:-"$HOME/.local/bin/weztrunk-backup"}
+state_dir=${WEZTRUNK_UPKEEP_STATE_DIR:-"${XDG_STATE_HOME:-$HOME/.local/state}/weztrunk/upkeep"}
+quiet=0
+force=0
+interval_override=
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  weztrunk-upkeep maybe [--quiet] [--interval SECONDS]
+  weztrunk-upkeep run [--quiet]
+  weztrunk-upkeep status
+
+Runs visible, opportunistic repo upkeep without installing a scheduler.
+EOF
+  exit 64
+}
+
+config_get() {
+  key=$1
+  default=$2
+
+  if [ -x "$config_runner" ]; then
+    "$config_runner" get "$key" "$default" 2>/dev/null || printf '%s\n' "$default"
+  else
+    printf '%s\n' "$default"
+  fi
+}
+
+is_true() {
+  case "$1" in
+    true|yes|on|1)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+is_uint() {
+  case "$1" in
+    ''|*[!0-9]*)
+      return 1
+      ;;
+    *)
+      return 0
+      ;;
+  esac
+}
+
+last_file() {
+  printf '%s/last-run\n' "$state_dir"
+}
+
+log_file() {
+  printf '%s/last.log\n' "$state_dir"
+}
+
+now_seconds() {
+  date +%s
+}
+
+read_last_run() {
+  file=$(last_file)
+  if [ -r "$file" ]; then
+    sed -n '1p' "$file"
+  else
+    printf '0\n'
+  fi
+}
+
+write_last_run() {
+  mkdir -p "$state_dir" || return 1
+  now_seconds > "$(last_file)"
+}
+
+run_step() {
+  label=$1
+  shift
+
+  if [ "$quiet" -eq 1 ]; then
+    {
+      printf '\n[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$label"
+      "$@"
+    } >> "$(log_file)" 2>&1
+  else
+    printf '\n%s\n' "$label"
+    "$@"
+  fi
+}
+
+run_upkeep() {
+  pull_enabled=$(config_get upkeep.pull true)
+  backup_enabled=$(config_get upkeep.backup true)
+  rc=0
+
+  mkdir -p "$state_dir" || return 1
+
+  if [ "$quiet" -eq 1 ]; then
+    : > "$(log_file)"
+  fi
+
+  if is_true "$backup_enabled"; then
+    if [ -x "$backup_runner" ]; then
+      run_step 'backup snapshot' "$backup_runner" snapshot || rc=1
+    else
+      [ "$quiet" -eq 1 ] || printf 'skip backup: %s not found\n' "$backup_runner" >&2
+      rc=1
+    fi
+  fi
+
+  if is_true "$pull_enabled"; then
+    if [ -x "$repos_runner" ]; then
+      run_step 'repos pull' "$repos_runner" pull || rc=1
+    else
+      [ "$quiet" -eq 1 ] || printf 'skip pull: %s not found\n' "$repos_runner" >&2
+      rc=1
+    fi
+  fi
+
+  write_last_run || rc=1
+
+  if [ "$quiet" -eq 1 ] && [ "$rc" -ne 0 ]; then
+    printf 'weztrunk upkeep had warnings; see %s\n' "$(log_file)" >&2
+  fi
+
+  return "$rc"
+}
+
+maybe_upkeep() {
+  mode=$(config_get upkeep.mode manual)
+  case "$mode" in
+    opportunistic)
+      ;;
+    off|manual|none|'')
+      return 0
+      ;;
+    *)
+      [ "$quiet" -eq 1 ] || printf 'skip upkeep: unknown upkeep.mode=%s\n' "$mode" >&2
+      return 0
+      ;;
+  esac
+
+  interval=${interval_override:-$(config_get upkeep.interval_seconds 1800)}
+  is_uint "$interval" || interval=1800
+
+  now=$(now_seconds)
+  last=$(read_last_run)
+  is_uint "$last" || last=0
+
+  if [ "$force" -eq 0 ] && [ $((now - last)) -lt "$interval" ]; then
+    return 0
+  fi
+
+  run_upkeep
+}
+
+status_upkeep() {
+  mode=$(config_get upkeep.mode manual)
+  interval=${interval_override:-$(config_get upkeep.interval_seconds 1800)}
+  pull_enabled=$(config_get upkeep.pull true)
+  backup_enabled=$(config_get upkeep.backup true)
+  now=$(now_seconds)
+  last=$(read_last_run)
+  is_uint "$last" || last=0
+
+  printf 'mode: %s\n' "$mode"
+  printf 'interval_seconds: %s\n' "$interval"
+  printf 'pull: %s\n' "$pull_enabled"
+  printf 'backup: %s\n' "$backup_enabled"
+  printf 'state_dir: %s\n' "$state_dir"
+  printf 'last_run_epoch: %s\n' "$last"
+  if [ "$last" -gt 0 ]; then
+    printf 'age_seconds: %s\n' $((now - last))
+  else
+    printf 'age_seconds: never\n'
+  fi
+}
+
+cmd=${1:-maybe}
+shift 2>/dev/null || true
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --quiet)
+      quiet=1
+      ;;
+    --interval)
+      shift
+      [ "$#" -gt 0 ] || usage
+      interval_override=$1
+      ;;
+    *)
+      usage
+      ;;
+  esac
+  shift
+done
+
+case "$cmd" in
+  maybe)
+    maybe_upkeep
+    ;;
+  run|force)
+    force=1
+    run_upkeep
+    ;;
+  status)
+    status_upkeep
+    ;;
+  *)
+    usage
+    ;;
+esac

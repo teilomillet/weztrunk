@@ -8,6 +8,7 @@ if [ "$#" -lt 2 ]; then
 fi
 
 dispatcher=${WEZTRUNK_AGENT_DISPATCHER:-"$HOME/.local/bin/weztrunk-agent"}
+config_runner=${WEZTRUNK_CONFIG_RUNNER:-"$HOME/.local/bin/weztrunk-config"}
 
 if [ ! -x "$dispatcher" ]; then
   printf 'WezTrunk agent dispatcher not found: %s\n' "$dispatcher" >&2
@@ -46,7 +47,11 @@ dtach_bin=$(find_bin dtach /home/linuxbrew/.linuxbrew/bin/dtach /opt/homebrew/bi
   exit 127
 }
 
-sleep_guard=${WEZTRUNK_SLEEP_GUARD:-auto}
+sleep_guard=${WEZTRUNK_SLEEP_GUARD:-}
+if [ -z "$sleep_guard" ] && [ -x "$config_runner" ]; then
+  sleep_guard=$("$config_runner" get sleep.guard auto 2>/dev/null || printf 'auto\n')
+fi
+sleep_guard=${sleep_guard:-auto}
 
 case "$sleep_guard" in
   auto|'')

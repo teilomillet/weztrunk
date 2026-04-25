@@ -27,6 +27,8 @@ WezTrunk is four things glued together:
 - `weztrunk repos timer enable`: enable the user-level auto-pull timer
 - `weztrunk backup snapshot`: snapshot dirty watched repos into local state
 - `weztrunk backup timer enable`: enable the dirty-work backup timer
+- `weztrunk upkeep maybe`: opportunistic pull/backup, throttled by config
+- `weztrunk upkeep status`: show the current opportunistic upkeep state
 - `weztrunk reconcile status`: show watched worktrees and whether they are on top of the base branch
 - `weztrunk reconcile current --agent conflict`: create a scratch rebase worktree and launch the agent on conflicts
 - `weztrunk reconcile watch`: keep creating fresh scratch rebase worktrees while the current repo changes
@@ -164,6 +166,18 @@ weztrunk backup timer disable
 
 The backup timer runs shortly after login and then every ten minutes. Identical dirty states are deduplicated by fingerprint, so a repo does not get a new backup every tick unless the work changed.
 
+## Opportunistic Upkeep
+
+For managed Macs or any machine where a persistent login scheduler is undesirable, use opportunistic upkeep instead of launchd/systemd timers. It runs only from normal terminal commands and is throttled by a timestamp under `~/.local/state/weztrunk/upkeep`.
+
+```sh
+weztrunk upkeep maybe
+weztrunk upkeep run
+weztrunk upkeep status
+```
+
+`wtx` and `wtn` call `weztrunk upkeep maybe --quiet` before switching or creating a worktree. The command checks `[upkeep]` in `config.toml`; with `mode = "opportunistic"`, it runs `backup snapshot` and `repos pull` only if `interval_seconds` has elapsed. No daemon, login item, root privileges, launchd job, or systemd timer is required.
+
 ## Reconcile Work
 
 Reconcile creates a scratch integration worktree so your active worktree is not rewritten while conflicts are being resolved.
@@ -259,7 +273,7 @@ This keeps the tracked `agent-profile.sh` generic while still allowing repo-loca
 
 - macOS uses `caffeinate -s` when available
 - Linux uses `systemd-inhibit --what=sleep` when available
-- `WEZTRUNK_SLEEP_GUARD=none` disables this
+- set `[sleep] guard = "none"` in `config.toml` to disable this
 
 ## Manual Search
 

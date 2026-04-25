@@ -16,10 +16,15 @@ fi
 
 wtx() {
   switcher="$HOME/.local/bin/weztrunk-switch"
+  upkeep="$HOME/.local/bin/weztrunk-upkeep"
 
   if [ ! -x "$switcher" ]; then
     printf 'WezTrunk switch helper not found: %s\n' "$switcher" >&2
     return 1
+  fi
+
+  if [ -x "$upkeep" ]; then
+    "$upkeep" maybe --quiet >/dev/null 2>&1 || true
   fi
 
   if [ "${1:-}" = "--create" ]; then

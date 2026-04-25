@@ -38,6 +38,17 @@ def load_config() -> dict:
         return tomllib.load(handle)
 
 
+def config_get(config: dict, dotted_path: str, default: str | None = None) -> object:
+    value: object = config
+    for part in dotted_path.split("."):
+        if not isinstance(value, dict) or part not in value:
+            if default is None:
+                raise KeyError(dotted_path)
+            return default
+        value = value[part]
+    return value
+
+
 def provider_table(config: dict, provider: str) -> dict:
     return config.get("providers", {}).get(provider, {})
 
@@ -128,9 +139,21 @@ def emit_description(config: dict, provider_arg: str | None, profile_arg: str | 
     return 0
 
 
+def emit_value(value: object) -> int:
+    if isinstance(value, bool):
+        print("true" if value else "false")
+    elif isinstance(value, (str, int, float)):
+        print(value)
+    elif value is None:
+        return 1
+    else:
+        raise SystemExit("weztrunk-config get only supports scalar TOML values")
+    return 0
+
+
 def usage() -> int:
     print(
-        "Usage: weztrunk-config <path|provider|profile|provider-bin|describe|args|profiles|current>",
+        "Usage: weztrunk-config <path|provider|profile|provider-bin|get|describe|args|profiles|current>",
         file=sys.stderr,
     )
     return 64
@@ -162,6 +185,16 @@ def main(argv: list[str]) -> int:
         provider = canonical_provider(provider_arg) if provider_arg else resolve_provider(config)
         print(resolve_bin(config, provider))
         return 0
+
+    if command == "get":
+        if len(argv) < 3:
+            raise SystemExit("Usage: weztrunk-config get <dotted.path> [default]")
+        default = argv[3] if len(argv) > 3 else None
+        try:
+            value = config_get(config, argv[2], default)
+        except KeyError:
+            return 1
+        return emit_value(value)
 
     if command == "describe":
         provider_arg = argv[2] if len(argv) > 2 else None
