@@ -75,6 +75,7 @@ link_file "$repo_root/.local/bin/weztrunk-backup" "$HOME/.local/bin/weztrunk-bac
 link_file "$repo_root/.local/bin/weztrunk-config" "$HOME/.local/bin/weztrunk-config"
 link_file "$repo_root/.local/bin/weztrunk-doctor" "$HOME/.local/bin/weztrunk-doctor"
 link_file "$repo_root/.local/bin/weztrunk-manual" "$HOME/.local/bin/weztrunk-manual"
+link_file "$repo_root/.local/bin/weztrunk-reconcile" "$HOME/.local/bin/weztrunk-reconcile"
 link_file "$repo_root/.local/bin/weztrunk-repos" "$HOME/.local/bin/weztrunk-repos"
 link_file "$repo_root/.local/bin/weztrunk-switch" "$HOME/.local/bin/weztrunk-switch"
 link_file "$repo_root/.local/bin/wt-code" "$HOME/.local/bin/wt-code"
@@ -94,6 +95,7 @@ chmod +x \
   "$HOME/.local/bin/weztrunk-backup" \
   "$HOME/.local/bin/weztrunk-config" \
   "$HOME/.local/bin/weztrunk-doctor" \
+  "$HOME/.local/bin/weztrunk-reconcile" \
   "$HOME/.local/bin/weztrunk-switch" \
   "$HOME/.local/bin/weztrunk-repos" \
   "$HOME/.local/bin/wt-code" \

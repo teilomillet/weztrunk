@@ -5,7 +5,7 @@ WezTrunk is four things glued together:
 1. WezTerm keybindings and command-palette actions
 2. Worktrunk worktree switching, aliases, and hooks
 3. A branch-scoped code-agent session runner built on `dtach`
-4. Conservative repo upkeep, dirty-work backup, and doctor checks for watched work repos
+4. Conservative repo upkeep, dirty-work backup, reconcile worktrees, and doctor checks for watched work repos
 
 ## Daily Use
 
@@ -27,6 +27,8 @@ WezTrunk is four things glued together:
 - `weztrunk repos timer enable`: enable the user-level auto-pull timer
 - `weztrunk backup snapshot`: snapshot dirty watched repos into local state
 - `weztrunk backup timer enable`: enable the dirty-work backup timer
+- `weztrunk reconcile status`: show watched worktrees and whether they are on top of the base branch
+- `weztrunk reconcile current --agent conflict`: create a scratch rebase worktree and launch the agent on conflicts
 - `weztrunk doctor`: check install links, dependencies, GitHub/SSH state, timers, and watched repos
 - `wthelp` or `wtm`: same manual command
 - `wzt`: short alias for `weztrunk`, if that name is not already taken
@@ -34,6 +36,7 @@ WezTrunk is four things glued together:
 - `wtpull`: short alias for `weztrunk repos pull`
 - `wtd`: short alias for `weztrunk doctor`
 - `wtb`: short alias for `weztrunk backup snapshot`
+- `wtr`: short alias for `weztrunk reconcile`
 - `wt step weztrunk-agent`: re-attach the current worktree's agent session
 - `wt step weztrunk-hydrate`: copy gitignored files into the current worktree on demand
 - `wt step weztrunk-manual`: print this manual from inside a repo
@@ -49,12 +52,14 @@ WezTrunk is four things glued together:
 - `weztrunk repos status`: quick status dashboard for watched repos
 - `weztrunk repos pull`: conservative fast-forward updater
 - `weztrunk backup snapshot`: local dirty-work snapshot
+- `weztrunk reconcile current`: scratch-worktree rebase onto latest base
 - `weztrunk doctor`: install and environment checkup
 - `wtp`: short alias for `weztrunk profile`
 - `wts`: short alias for `weztrunk repos status`
 - `wtpull`: short alias for `weztrunk repos pull`
 - `wtd`: short alias for `weztrunk doctor`
 - `wtb`: short alias for `weztrunk backup snapshot`
+- `wtr`: short alias for `weztrunk reconcile`
 
 ## WezTerm
 
@@ -156,6 +161,22 @@ weztrunk backup timer disable
 ```
 
 The backup timer runs shortly after login and then every ten minutes. Identical dirty states are deduplicated by fingerprint, so a repo does not get a new backup every tick unless the work changed.
+
+## Reconcile Work
+
+Reconcile creates a scratch integration worktree so your active worktree is not rewritten while conflicts are being resolved.
+
+```sh
+weztrunk reconcile status
+weztrunk reconcile current
+weztrunk reconcile current --agent conflict
+weztrunk reconcile current --agent always
+wtr status
+```
+
+`current` creates a branch named like `weztrunk/reconcile/<branch>-<timestamp>` and a matching worktree under `.worktrees/`, adding that directory to the repo-local Git exclude if needed. If the active worktree has local changes, those changes are copied into the scratch worktree and committed there as a WIP snapshot. Then the scratch branch is rebased onto `origin/HEAD` or `origin/main`.
+
+With `--agent conflict`, WezTrunk launches the configured code agent only when patch application or rebase conflicts need help. With `--agent always`, it launches the agent even when the rebase succeeds, for review and cleanup.
 
 ## Doctor
 

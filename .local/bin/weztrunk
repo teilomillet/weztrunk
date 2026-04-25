@@ -9,9 +9,10 @@ config_runner=${WEZTRUNK_CONFIG_RUNNER:-"$HOME/.local/bin/weztrunk-config"}
 repos_runner=${WEZTRUNK_REPOS_RUNNER:-"$HOME/.local/bin/weztrunk-repos"}
 backup_runner=${WEZTRUNK_BACKUP_RUNNER:-"$HOME/.local/bin/weztrunk-backup"}
 doctor_runner=${WEZTRUNK_DOCTOR_RUNNER:-"$HOME/.local/bin/weztrunk-doctor"}
+reconcile_runner=${WEZTRUNK_RECONCILE_RUNNER:-"$HOME/.local/bin/weztrunk-reconcile"}
 
 usage() {
-  printf 'Usage: %s <man|profile|repos|backup|doctor|switch|agent> [args...]\n' "$0" >&2
+  printf 'Usage: %s <man|profile|repos|backup|reconcile|doctor|switch|agent> [args...]\n' "$0" >&2
   exit 64
 }
 
@@ -55,6 +56,9 @@ case "$cmd" in
     ;;
   backup|backups)
     exec "$backup_runner" "$@"
+    ;;
+  reconcile|resolve|sync)
+    exec "$reconcile_runner" "$@"
     ;;
   doctor)
     exec "$doctor_runner" "$@"

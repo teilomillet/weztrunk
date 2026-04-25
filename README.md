@@ -12,7 +12,7 @@ The name stays agent-neutral on purpose. The current default implementation targ
 - Keeps the agent alive while still allowing the display to sleep.
 - Uses Worktrunk summaries and non-interactive commit generation.
 - Adds Worktrunk aliases and hooks for agent resume, manual cache hydration, tmux renaming, and branch-session cleanup.
-- Tracks selected repos with conservative status, pull, dirty-work backup, doctor, and optional user-level systemd timers.
+- Tracks selected repos with conservative status, pull, dirty-work backup, conflict reconciliation, doctor, and optional user-level systemd timers.
 - Shows `repo:branch` in WezTerm tab titles for worktree tabs.
 
 ## Files
@@ -32,6 +32,7 @@ The name stays agent-neutral on purpose. The current default implementation targ
 - [`.local/bin/weztrunk-doctor`](./.local/bin/weztrunk-doctor): local install and dependency checkup.
 - [`.local/bin/weztrunk-agent`](./.local/bin/weztrunk-agent): shared agent dispatcher and session utilities.
 - [`.local/bin/weztrunk-manual`](./.local/bin/weztrunk-manual): manual viewer for shell and WezTerm.
+- [`.local/bin/weztrunk-reconcile`](./.local/bin/weztrunk-reconcile): scratch-worktree rebase and conflict-resolution launcher.
 - [`.local/bin/weztrunk-repos`](./.local/bin/weztrunk-repos): repo status, safe pull, and timer management.
 - [`.local/bin/wt-code`](./.local/bin/wt-code): detached interactive agent launcher.
 - [`.local/bin/worktrunk-code-commit`](./.local/bin/worktrunk-code-commit): non-interactive commit-message helper.
@@ -103,6 +104,8 @@ If you are upgrading an older install, rerun the installer once. This version ad
 - `weztrunk repos timer enable`: start the user-level auto-pull timer
 - `weztrunk backup snapshot`: snapshot dirty watched repos into local state
 - `weztrunk backup timer enable`: start the user-level dirty-work backup timer
+- `weztrunk reconcile status`: show watched worktrees and whether they are on top of the base branch
+- `weztrunk reconcile current --agent conflict`: create a scratch reconciliation worktree for the current repo
 - `weztrunk doctor`: check install links, required commands, SSH/GitHub state, timers, and watched repos
 - `wtman merge`: same manual search path from the shell
 - `wthelp` or `wtm`: open the built-in manual
@@ -112,6 +115,7 @@ If you are upgrading an older install, rerun the installer once. This version ad
 - `wtpull`: short alias for `weztrunk repos pull`
 - `wtd`: short alias for `weztrunk doctor`
 - `wtb`: short alias for `weztrunk backup snapshot`
+- `wtr`: short alias for `weztrunk reconcile`
 - `wt step weztrunk-agent`: re-attach the current worktree's agent session
 - `wt step weztrunk-hydrate`: copy gitignored files into the current worktree on demand
 - `wt step weztrunk-manual`: print the manual from inside a repo
@@ -143,6 +147,7 @@ WezTrunk shortcuts on Linux/Ubuntu avoid the Super key because GNOME reserves se
 - Worktrunk summaries and commit generation use the configured provider non-interactively.
 - Repo upkeep uses fast-forward-only pulls and skips dirty, detached, untracked, or diverged work.
 - Dirty-work backup snapshots diffs and small text untracked files without committing, stashing, or modifying the repo.
+- Reconciliation happens in scratch worktrees and never rewrites the active worktree automatically.
 - `post-switch` renames the current tmux window to the active branch when inside tmux.
 - `post-remove` cleans up the detached branch session socket after a worktree is removed.
 
@@ -190,6 +195,21 @@ weztrunk backup timer disable
 ```
 
 The timer runs shortly after login and then every ten minutes. Repeated identical dirty states are deduplicated by fingerprint, so a repo does not get a new backup every timer tick unless the work changed.
+
+## Reconcile
+
+Use reconcile when a branch or dirty worktree needs to be rebased onto the latest base branch without touching the active worktree.
+
+```bash
+weztrunk reconcile status
+weztrunk reconcile current
+weztrunk reconcile current --agent conflict
+weztrunk reconcile current --agent always
+```
+
+`current` creates a branch named like `weztrunk/reconcile/<branch>-<timestamp>` and a matching scratch worktree under `.worktrees/`, adding that directory to the repo-local Git exclude if needed. If the active worktree is dirty, those changes are copied into the scratch worktree and committed as a WIP snapshot there. The scratch branch is then rebased onto `origin/HEAD` or `origin/main`.
+
+When the rebase or patch application conflicts, `--agent conflict` launches the configured code agent in the scratch worktree with instructions to resolve the integration. Review the scratch branch before merging or replacing your original branch.
 
 ## Doctor
 

@@ -1,0 +1,428 @@
+#!/usr/bin/env bash
+
+set -u
+
+config_path=${WEZTRUNK_REPOS_PATH:-"$HOME/.config/weztrunk/repos.txt"}
+runner=${WEZTRUNK_WORKTRUNK_RUNNER:-"$HOME/.local/bin/wt-code"}
+agent_mode=conflict
+repo_arg=
+base_ref=
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  weztrunk-reconcile status [--config PATH]
+  weztrunk-reconcile current [--repo PATH] [--base REF] [--agent conflict|always|never]
+
+Creates a scratch reconciliation worktree so current work can be rebased on top
+of the latest base without rewriting the active worktree.
+EOF
+  exit 64
+}
+
+expand_path() {
+  raw=$1
+
+  case "$raw" in
+    '~')
+      printf '%s\n' "$HOME"
+      ;;
+    '~/'*)
+      printf '%s/%s\n' "$HOME" "${raw#\~/}"
+      ;;
+    '$HOME')
+      printf '%s\n' "$HOME"
+      ;;
+    '$HOME/'*)
+      printf '%s/%s\n' "$HOME" "${raw#\$HOME/}"
+      ;;
+    *)
+      printf '%s\n' "$raw"
+      ;;
+  esac
+}
+
+sanitize() {
+  value=$(printf '%s' "$1" | tr '/[:space:]' '--' | tr -cs '[:alnum:]._-' '-')
+  value=${value#-}
+  value=${value%-}
+  printf '%s\n' "${value:-work}"
+}
+
+find_bin() {
+  bin_name=$1
+  shift
+
+  if command -v "$bin_name" >/dev/null 2>&1; then
+    command -v "$bin_name"
+    return 0
+  fi
+
+  for fallback in "$@"; do
+    if [ -n "$fallback" ] && [ -x "$fallback" ]; then
+      printf '%s\n' "$fallback"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
+git_bin=$(find_bin git /usr/bin/git) || {
+  printf 'git not found. Install git or set PATH.\n' >&2
+  exit 127
+}
+
+repo_root_for() {
+  "$git_bin" -C "$1" rev-parse --show-toplevel 2>/dev/null
+}
+
+repo_name_for() {
+  repo=$1
+  common_dir=$("$git_bin" -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+
+  if [ "$(basename "$common_dir")" = ".git" ]; then
+    basename "$(dirname "$common_dir")"
+    return
+  fi
+
+  basename "$common_dir"
+}
+
+current_branch_for() {
+  "$git_bin" -C "$1" branch --show-current 2>/dev/null || true
+}
+
+dirty_count_for() {
+  "$git_bin" -C "$1" status --porcelain=v1 2>/dev/null |
+    sed '/^?? \.codex$/d;/^?? \.codex\//d;/^?? \.worktrees$/d;/^?? \.worktrees\//d' |
+    wc -l |
+    tr -d ' '
+}
+
+origin_head_for() {
+  repo=$1
+  head=$("$git_bin" -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
+
+  if [ -n "$head" ]; then
+    printf '%s\n' "$head"
+    return
+  fi
+
+  if "$git_bin" -C "$repo" show-ref --verify --quiet refs/remotes/origin/main; then
+    printf 'origin/main\n'
+    return
+  fi
+
+  if "$git_bin" -C "$repo" show-ref --verify --quiet refs/remotes/origin/master; then
+    printf 'origin/master\n'
+    return
+  fi
+
+  printf 'HEAD\n'
+}
+
+copy_untracked_to_scratch() {
+  repo=$1
+  scratch=$2
+
+  while IFS= read -r -d '' path; do
+    case "$path" in
+      .codex|.codex/*|.git|.git/*|.worktrees|.worktrees/*)
+        continue
+        ;;
+    esac
+
+    src=$repo/$path
+    dest=$scratch/$path
+    if [ -e "$src" ]; then
+      mkdir -p "$(dirname "$dest")"
+      cp -a "$src" "$dest"
+    fi
+  done < <("$git_bin" -C "$repo" ls-files --others --exclude-standard -z)
+}
+
+ensure_local_exclude() {
+  repo=$1
+  pattern=$2
+
+  exclude_path=$("$git_bin" -C "$repo" rev-parse --path-format=absolute --git-path info/exclude 2>/dev/null) || return 0
+  mkdir -p "$(dirname "$exclude_path")" 2>/dev/null || return 0
+  touch "$exclude_path" 2>/dev/null || return 0
+
+  if ! grep -Fxq -- "$pattern" "$exclude_path"; then
+    printf '%s\n' "$pattern" >> "$exclude_path"
+  fi
+}
+
+apply_patch_file() {
+  scratch=$1
+  patch_file=$2
+  mode=$3
+
+  [ -s "$patch_file" ] || return 0
+
+  case "$mode" in
+    staged)
+      "$git_bin" -C "$scratch" apply --index --whitespace=nowarn "$patch_file" ||
+        "$git_bin" -C "$scratch" apply --reject --whitespace=nowarn "$patch_file"
+      ;;
+    unstaged)
+      "$git_bin" -C "$scratch" apply --whitespace=nowarn "$patch_file" ||
+        "$git_bin" -C "$scratch" apply --reject --whitespace=nowarn "$patch_file"
+      ;;
+  esac
+}
+
+copy_dirty_to_scratch() {
+  repo=$1
+  scratch=$2
+  patch_dir=$(mktemp -d "${TMPDIR:-/tmp}/weztrunk-reconcile.XXXXXX") || return 1
+  patch_failed=0
+
+  "$git_bin" -C "$repo" diff --staged --binary > "$patch_dir/staged.patch"
+  "$git_bin" -C "$repo" diff --binary > "$patch_dir/unstaged.patch"
+
+  apply_patch_file "$scratch" "$patch_dir/staged.patch" staged || patch_failed=1
+  apply_patch_file "$scratch" "$patch_dir/unstaged.patch" unstaged || patch_failed=1
+  copy_untracked_to_scratch "$repo" "$scratch"
+
+  if [ -n "$("$git_bin" -C "$scratch" status --porcelain=v1 | sed '/^?? \.codex$/d')" ]; then
+    "$git_bin" -C "$scratch" add -A
+    "$git_bin" -C "$scratch" commit -m "WIP reconcile snapshot from $(current_branch_for "$repo")" >/dev/null ||
+      patch_failed=1
+  fi
+
+  rm -rf "$patch_dir"
+  return "$patch_failed"
+}
+
+launch_agent() {
+  scratch=$1
+  repo_name=$2
+  scratch_branch=$3
+  base=$4
+  reason=$5
+
+  prompt="Reconcile this scratch worktree.
+
+Goal:
+- Keep the user's work on top of ${base}.
+- Resolve any rebase, patch, or semantic conflicts.
+- Preserve the active/original worktree; only edit this scratch worktree.
+- Commit the resolved result on ${scratch_branch}.
+- Do not push.
+
+Context:
+- Scratch worktree: ${scratch}
+- Scratch branch: ${scratch_branch}
+- Reason: ${reason}
+
+After resolving, summarize what changed and what still needs review."
+
+  if [ ! -x "$runner" ]; then
+    printf 'Codex launcher not found: %s\n' "$runner" >&2
+    printf 'Open %s manually and run your agent there.\n' "$scratch" >&2
+    return 127
+  fi
+
+  if [ ! -t 0 ]; then
+    printf 'Reconcile worktree ready: %s\n' "$scratch"
+    printf 'Launch manually:\n'
+    printf '  cd %s && %s %s %s %s\n' "$scratch" "$runner" "$repo_name" "$(sanitize "$scratch_branch")" "'${prompt}'"
+    return 0
+  fi
+
+  (
+    cd "$scratch" || exit 1
+    exec "$runner" "$repo_name" "$(sanitize "$scratch_branch")" "$prompt"
+  )
+}
+
+status_one_repo() {
+  repo=$1
+
+  if ! root=$(repo_root_for "$repo"); then
+    printf '%-18s %-18s %-8s %-12s %s\n' "$(basename "$repo")" '-' '-' 'missing' "$repo"
+    return
+  fi
+
+  repo_name=$(repo_name_for "$root")
+  "$git_bin" -C "$root" fetch --prune origin >/dev/null 2>&1 || true
+  base=$(origin_head_for "$root")
+
+  "$git_bin" -C "$root" worktree list --porcelain |
+    awk -v repo="$repo_name" -v base="$base" '
+      /^worktree / { path=$2 }
+      /^branch / { branch=$2; sub("^refs/heads/", "", branch) }
+      /^detached$/ { branch="detached" }
+      /^$/ {
+        if (path != "") {
+          print path "\t" branch
+        }
+        path=""; branch="-"
+      }
+      END {
+        if (path != "") {
+          print path "\t" branch
+        }
+      }
+    ' |
+    while IFS="$(printf '\t')" read -r path branch; do
+      dirty=$(dirty_count_for "$path")
+      if [ "$branch" != "detached" ] && "$git_bin" -C "$path" merge-base --is-ancestor "$base" HEAD 2>/dev/null; then
+        base_state=on-top
+      else
+        base_state=needs-base
+      fi
+      printf '%-18s %-18s %-8s %-12s %s\n' "$repo_name" "$branch" "$dirty" "$base_state" "$path"
+    done
+}
+
+process_repos() {
+  handler=$1
+
+  if [ ! -f "$config_path" ]; then
+    printf 'WezTrunk repos config not found: %s\n' "$config_path" >&2
+    return 66
+  fi
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    case "$line" in
+      ''|'#'*)
+        continue
+        ;;
+    esac
+
+    repo=$(expand_path "$line")
+    "$handler" "$repo"
+  done < "$config_path"
+}
+
+cmd=${1:-status}
+shift 2>/dev/null || true
+
+case "$cmd" in
+  status)
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --config)
+          shift
+          [ "$#" -gt 0 ] || usage
+          config_path=$1
+          ;;
+        *)
+          usage
+          ;;
+      esac
+      shift
+    done
+
+    printf '%-18s %-18s %-8s %-12s %s\n' repo branch dirty base path
+    printf '%-18s %-18s %-8s %-12s %s\n' ---- ------ ----- ---- ----
+    process_repos status_one_repo
+    ;;
+  current|start)
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --repo)
+          shift
+          [ "$#" -gt 0 ] || usage
+          repo_arg=$1
+          ;;
+        --base)
+          shift
+          [ "$#" -gt 0 ] || usage
+          base_ref=$1
+          ;;
+        --agent)
+          shift
+          [ "$#" -gt 0 ] || usage
+          agent_mode=$1
+          case "$agent_mode" in
+            conflict|always|never)
+              ;;
+            *)
+              usage
+              ;;
+          esac
+          ;;
+        *)
+          usage
+          ;;
+      esac
+      shift
+    done
+
+    repo_input=${repo_arg:-$PWD}
+    repo=$(repo_root_for "$repo_input") || {
+      printf 'Not inside a git repository: %s\n' "$repo_input" >&2
+      exit 64
+    }
+    branch=$(current_branch_for "$repo")
+    if [ -z "$branch" ]; then
+      printf 'Current worktree is detached; cannot create reconciliation branch.\n' >&2
+      exit 64
+    fi
+
+    "$git_bin" -C "$repo" fetch --prune origin
+    base=${base_ref:-$(origin_head_for "$repo")}
+    repo_name=$(repo_name_for "$repo")
+    stamp=$(date -u +%Y%m%dT%H%M%SZ)
+    safe_branch=$(sanitize "$branch")
+    scratch_branch=weztrunk/reconcile/${safe_branch}-${stamp}
+    scratch_path=$repo/.worktrees/$(sanitize "$scratch_branch")
+
+    ensure_local_exclude "$repo" '.worktrees/'
+    if ! mkdir -p "$(dirname "$scratch_path")"; then
+      printf 'Cannot create scratch worktree parent: %s\n' "$(dirname "$scratch_path")" >&2
+      exit 73
+    fi
+
+    if ! "$git_bin" -C "$repo" branch "$scratch_branch" "$branch"; then
+      printf 'Cannot create scratch branch: %s\n' "$scratch_branch" >&2
+      exit 1
+    fi
+
+    if ! "$git_bin" -C "$repo" worktree add "$scratch_path" "$scratch_branch"; then
+      "$git_bin" -C "$repo" branch -D "$scratch_branch" >/dev/null 2>&1 || true
+      printf 'Cannot create scratch worktree: %s\n' "$scratch_path" >&2
+      exit 1
+    fi
+
+    needs_agent=0
+    reason=
+
+    if [ "$(dirty_count_for "$repo")" != "0" ]; then
+      printf 'Copying dirty work from %s into scratch worktree...\n' "$repo"
+      if ! copy_dirty_to_scratch "$repo" "$scratch_path"; then
+        needs_agent=1
+        reason='dirty work did not apply cleanly to scratch branch'
+      fi
+    fi
+
+    if [ "$needs_agent" -eq 0 ]; then
+      printf 'Rebasing %s onto %s in scratch worktree...\n' "$scratch_branch" "$base"
+      if ! "$git_bin" -C "$scratch_path" rebase "$base"; then
+        needs_agent=1
+        reason='rebase conflict'
+      fi
+    fi
+
+    printf 'Scratch worktree: %s\n' "$scratch_path"
+    printf 'Scratch branch: %s\n' "$scratch_branch"
+
+    if [ "$agent_mode" = always ] || { [ "$agent_mode" = conflict ] && [ "$needs_agent" -eq 1 ]; }; then
+      launch_agent "$scratch_path" "$repo_name" "$scratch_branch" "$base" "${reason:-requested review}"
+    elif [ "$needs_agent" -eq 1 ]; then
+      printf 'Reconciliation needs manual work: %s.\n' "${reason:-unknown issue}"
+      printf 'Open the scratch worktree and resolve it there before merging.\n'
+    else
+      printf 'Reconciliation completed without conflicts. Review the scratch branch before merging.\n'
+    fi
+    ;;
+  *)
+    usage
+    ;;
+esac
