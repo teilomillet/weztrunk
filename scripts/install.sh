@@ -4,6 +4,7 @@ set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 stamp=$(date +%Y%m%d-%H%M%S)
+os_name=$(uname -s 2>/dev/null || printf 'unknown')
 
 detect_shell_rc() {
   if [ -n "${WEZTRUNK_SHELL_RC:-}" ]; then
@@ -57,6 +58,20 @@ link_file() {
   ln -s "$source_path" "$target_path"
 }
 
+remove_repo_symlink() {
+  source_path=$1
+  target_path=$2
+
+  if [ ! -L "$target_path" ]; then
+    return
+  fi
+
+  linked_path=$(readlink "$target_path" 2>/dev/null || true)
+  if [ "$linked_path" = "$source_path" ]; then
+    rm -f "$target_path"
+  fi
+}
+
 link_file "$repo_root/.wezterm.lua" "$HOME/.wezterm.lua"
 link_file "$repo_root/.config/worktrunk/config.toml" "$HOME/.config/worktrunk/config.toml"
 link_file "$repo_root/.config/weztrunk/MANUAL.md" "$HOME/.config/weztrunk/MANUAL.md"
@@ -81,10 +96,17 @@ link_file "$repo_root/.local/bin/weztrunk-switch" "$HOME/.local/bin/weztrunk-swi
 link_file "$repo_root/.local/bin/weztrunk-upkeep" "$HOME/.local/bin/weztrunk-upkeep"
 link_file "$repo_root/.local/bin/wt-code" "$HOME/.local/bin/wt-code"
 link_file "$repo_root/.local/bin/worktrunk-code-commit" "$HOME/.local/bin/worktrunk-code-commit"
-link_file "$repo_root/.config/systemd/user/weztrunk-repos-pull.service" "$HOME/.config/systemd/user/weztrunk-repos-pull.service"
-link_file "$repo_root/.config/systemd/user/weztrunk-repos-pull.timer" "$HOME/.config/systemd/user/weztrunk-repos-pull.timer"
-link_file "$repo_root/.config/systemd/user/weztrunk-work-backup.service" "$HOME/.config/systemd/user/weztrunk-work-backup.service"
-link_file "$repo_root/.config/systemd/user/weztrunk-work-backup.timer" "$HOME/.config/systemd/user/weztrunk-work-backup.timer"
+if [ "$os_name" = "Darwin" ]; then
+  remove_repo_symlink "$repo_root/.config/systemd/user/weztrunk-repos-pull.service" "$HOME/.config/systemd/user/weztrunk-repos-pull.service"
+  remove_repo_symlink "$repo_root/.config/systemd/user/weztrunk-repos-pull.timer" "$HOME/.config/systemd/user/weztrunk-repos-pull.timer"
+  remove_repo_symlink "$repo_root/.config/systemd/user/weztrunk-work-backup.service" "$HOME/.config/systemd/user/weztrunk-work-backup.service"
+  remove_repo_symlink "$repo_root/.config/systemd/user/weztrunk-work-backup.timer" "$HOME/.config/systemd/user/weztrunk-work-backup.timer"
+else
+  link_file "$repo_root/.config/systemd/user/weztrunk-repos-pull.service" "$HOME/.config/systemd/user/weztrunk-repos-pull.service"
+  link_file "$repo_root/.config/systemd/user/weztrunk-repos-pull.timer" "$HOME/.config/systemd/user/weztrunk-repos-pull.timer"
+  link_file "$repo_root/.config/systemd/user/weztrunk-work-backup.service" "$HOME/.config/systemd/user/weztrunk-work-backup.service"
+  link_file "$repo_root/.config/systemd/user/weztrunk-work-backup.timer" "$HOME/.config/systemd/user/weztrunk-work-backup.timer"
+fi
 link_file "$repo_root/shell/weztrunk.sh" "$HOME/.config/weztrunk/weztrunk.sh"
 link_file "$repo_root/shell/weztrunk.zsh" "$HOME/.config/weztrunk/weztrunk.zsh"
 
@@ -111,6 +133,9 @@ if ! grep -Fq "$rc_line" "$shell_rc"; then
 fi
 
 printf 'Installed WezTrunk symlinks from %s\n' "$repo_root"
+if [ "$os_name" = "Darwin" ]; then
+  printf 'Skipped systemd user timer links on macOS; opportunistic upkeep runs from wtx/wtn instead.\n'
+fi
 printf 'Updated shell startup file: %s\n' "$shell_rc"
 printf 'Reload your shell or run: source %s\n' "$shell_rc"
 

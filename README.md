@@ -25,7 +25,7 @@ The name stays agent-neutral on purpose. The current default implementation targ
 - [`.config/weztrunk/providers/`](./.config/weztrunk/providers): per-provider extra-flag files.
 - [`shell/weztrunk.sh`](./shell/weztrunk.sh): shared `bash`/`zsh` integration for `wt`, `wtx`, and `wtn`.
 - [`.config/worktrunk/config.toml`](./.config/worktrunk/config.toml): Worktrunk defaults.
-- [`.config/systemd/user/`](./.config/systemd/user): optional repo-upkeep and backup user services and timers.
+- [`.config/systemd/user/`](./.config/systemd/user): optional Linux repo-upkeep and backup user services and timers.
 - [`.local/bin/weztrunk`](./.local/bin/weztrunk): top-level CLI entrypoint for manual and helper subcommands.
 - [`.local/bin/weztrunk-backup`](./.local/bin/weztrunk-backup): dirty-work snapshot helper.
 - [`.local/bin/weztrunk-config`](./.local/bin/weztrunk-config): TOML-backed profile reader.
@@ -178,7 +178,7 @@ weztrunk repos timer disable
 
 The pull command fetches each repo, then fast-forwards only when the current branch is clean and behind its upstream. It skips repos with local changes, detached HEADs, missing upstreams, or diverged branches.
 
-On Linux with systemd user services, `weztrunk repos timer enable` starts a timer that runs shortly after login and then every five minutes. When `notify-send` is available, timer runs use desktop notifications for skipped repos.
+On Linux with systemd user services, `weztrunk repos timer enable` starts a timer that runs shortly after login and then every five minutes. When `notify-send` is available, timer runs use desktop notifications for skipped repos. On macOS, the installer skips these systemd unit links and leaves scheduled upkeep to the opportunistic mode below.
 
 ## Opportunistic Upkeep
 
@@ -248,6 +248,7 @@ weztrunk doctor
 ```
 
 It checks required commands, installed symlinks, GitHub CLI auth, SSH config, repo timers, backup timers, and watched repo status.
+On macOS, doctor treats systemd timers as intentionally skipped.
 
 ## Profiles
 

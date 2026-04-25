@@ -19,6 +19,10 @@ fail() {
   printf '[fail] %s\n' "$1"
 }
 
+is_darwin() {
+  [ "${os_name:-}" = "Darwin" ]
+}
+
 check_command() {
   name=$1
   required=${2:-required}
@@ -51,6 +55,28 @@ check_symlink() {
   else
     warn "$target exists but is not a symlink"
   fi
+}
+
+check_skipped_symlink() {
+  target=$1
+  expected=$2
+
+  if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+    ok "$target: skipped on macOS"
+    return
+  fi
+
+  if [ -L "$target" ]; then
+    linked_path=$(readlink "$target" 2>/dev/null || true)
+    if [ "$linked_path" = "$expected" ]; then
+      warn "$target: stale systemd symlink; rerun scripts/install.sh to remove it"
+    else
+      warn "$target: exists but is not managed by WezTrunk on macOS"
+    fi
+    return
+  fi
+
+  warn "$target exists but is not managed by WezTrunk on macOS"
 }
 
 check_timer() {
@@ -88,6 +114,7 @@ if command -v readlink >/dev/null 2>&1; then
   fi
 fi
 
+os_name=$(uname -s 2>/dev/null || printf 'unknown')
 repo_root=$(CDPATH= cd -- "$(dirname "$script_path")/../.." && pwd)
 
 printf 'WezTrunk doctor\n'
@@ -99,8 +126,12 @@ check_command wt
 check_command wezterm optional
 check_command dtach
 check_command gh optional
-check_command systemctl optional
-check_command notify-send optional
+if is_darwin; then
+  ok 'systemd timers: skipped on macOS'
+else
+  check_command systemctl optional
+  check_command notify-send optional
+fi
 
 printf '\nInstall links\n'
 check_symlink "$HOME/.local/bin/weztrunk" "$repo_root/.local/bin/weztrunk"
@@ -110,8 +141,15 @@ check_symlink "$HOME/.local/bin/weztrunk-doctor" "$repo_root/.local/bin/weztrunk
 check_symlink "$HOME/.local/bin/weztrunk-reconcile" "$repo_root/.local/bin/weztrunk-reconcile"
 check_symlink "$HOME/.local/bin/weztrunk-upkeep" "$repo_root/.local/bin/weztrunk-upkeep"
 check_symlink "$HOME/.config/weztrunk/repos.txt" "$repo_root/.config/weztrunk/repos.txt"
-check_symlink "$HOME/.config/systemd/user/weztrunk-repos-pull.timer" "$repo_root/.config/systemd/user/weztrunk-repos-pull.timer"
-check_symlink "$HOME/.config/systemd/user/weztrunk-work-backup.timer" "$repo_root/.config/systemd/user/weztrunk-work-backup.timer"
+if is_darwin; then
+  check_skipped_symlink "$HOME/.config/systemd/user/weztrunk-repos-pull.service" "$repo_root/.config/systemd/user/weztrunk-repos-pull.service"
+  check_skipped_symlink "$HOME/.config/systemd/user/weztrunk-repos-pull.timer" "$repo_root/.config/systemd/user/weztrunk-repos-pull.timer"
+  check_skipped_symlink "$HOME/.config/systemd/user/weztrunk-work-backup.service" "$repo_root/.config/systemd/user/weztrunk-work-backup.service"
+  check_skipped_symlink "$HOME/.config/systemd/user/weztrunk-work-backup.timer" "$repo_root/.config/systemd/user/weztrunk-work-backup.timer"
+else
+  check_symlink "$HOME/.config/systemd/user/weztrunk-repos-pull.timer" "$repo_root/.config/systemd/user/weztrunk-repos-pull.timer"
+  check_symlink "$HOME/.config/systemd/user/weztrunk-work-backup.timer" "$repo_root/.config/systemd/user/weztrunk-work-backup.timer"
+fi
 
 printf '\nGitHub and SSH\n'
 if command -v gh >/dev/null 2>&1; then
@@ -132,8 +170,12 @@ if command -v ssh >/dev/null 2>&1; then
 fi
 
 printf '\nTimers\n'
-check_timer weztrunk-repos-pull.timer
-check_timer weztrunk-work-backup.timer
+if is_darwin; then
+  ok 'systemd timers: skipped on macOS; opportunistic upkeep runs from wtx/wtn'
+else
+  check_timer weztrunk-repos-pull.timer
+  check_timer weztrunk-work-backup.timer
+fi
 
 printf '\nWatched repos\n'
 if [ -x "$HOME/.local/bin/weztrunk" ]; then

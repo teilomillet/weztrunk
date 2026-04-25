@@ -141,7 +141,7 @@ weztrunk repos timer status
 weztrunk repos timer disable
 ```
 
-On Linux with systemd user services, the timer runs shortly after login and then every five minutes. Timer pulls pass `--notify`, so skipped repos can trigger desktop notifications when `notify-send` is available.
+On Linux with systemd user services, the timer runs shortly after login and then every five minutes. Timer pulls pass `--notify`, so skipped repos can trigger desktop notifications when `notify-send` is available. On macOS, the installer skips these systemd unit links and leaves scheduled upkeep to the opportunistic mode below.
 
 ## Dirty-Work Backup
 
@@ -212,7 +212,7 @@ weztrunk doctor
 wtd
 ```
 
-Doctor checks required commands, installed symlinks, GitHub CLI auth, SSH config, repo timers, backup timers, and watched repo status.
+Doctor checks required commands, installed symlinks, GitHub CLI auth, SSH config, repo timers, backup timers, and watched repo status. On macOS, doctor treats systemd timers as intentionally skipped.
 
 ## Profiles
 
