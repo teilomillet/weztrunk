@@ -199,13 +199,6 @@ local function spawn_worktrunk_agent(window, pane, opts)
     },
     pane
   )
-
-  window:toast_notification(
-    'Worktrunk',
-    opts.message or 'Opening Worktrunk + agent in a new tab',
-    nil,
-    3000
-  )
 end
 
 local function worktrunk_picker()

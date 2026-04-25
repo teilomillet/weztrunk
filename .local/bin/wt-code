@@ -24,22 +24,24 @@ mkdir -p "$socket_dir"
 
 find_bin() {
   bin_name=$1
-  fallback=$2
+  shift
 
   if command -v "$bin_name" >/dev/null 2>&1; then
     command -v "$bin_name"
     return 0
   fi
 
-  if [ -n "$fallback" ] && [ -x "$fallback" ]; then
-    printf '%s\n' "$fallback"
-    return 0
-  fi
+  for fallback in "$@"; do
+    if [ -n "$fallback" ] && [ -x "$fallback" ]; then
+      printf '%s\n' "$fallback"
+      return 0
+    fi
+  done
 
   return 1
 }
 
-dtach_bin=$(find_bin dtach /opt/homebrew/bin/dtach) || {
+dtach_bin=$(find_bin dtach /home/linuxbrew/.linuxbrew/bin/dtach /opt/homebrew/bin/dtach) || {
   printf 'dtach not found. Install it and ensure it is on PATH.\n' >&2
   exit 127
 }

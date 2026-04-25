@@ -9,17 +9,19 @@ usage() {
 
 find_bin() {
   bin_name=$1
-  fallback=$2
+  shift
 
   if command -v "$bin_name" >/dev/null 2>&1; then
     command -v "$bin_name"
     return 0
   fi
 
-  if [ -n "$fallback" ] && [ -x "$fallback" ]; then
-    printf '%s\n' "$fallback"
-    return 0
-  fi
+  for fallback in "$@"; do
+    if [ -n "$fallback" ] && [ -x "$fallback" ]; then
+      printf '%s\n' "$fallback"
+      return 0
+    fi
+  done
 
   return 1
 }
@@ -80,7 +82,7 @@ runner=${WEZTRUNK_WORKTRUNK_RUNNER:-"$HOME/.local/bin/wt-code"}
   exit 127
 }
 
-wt_bin=$(find_bin wt /opt/homebrew/bin/wt) || {
+wt_bin=$(find_bin wt /home/linuxbrew/.linuxbrew/bin/wt /opt/homebrew/bin/wt) || {
   printf 'Worktrunk CLI not found. Install `wt` or set PATH.\n' >&2
   exit 127
 }

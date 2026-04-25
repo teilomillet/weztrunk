@@ -69,15 +69,15 @@ weztrunk_find_agent_bin() {
   case "$(weztrunk_agent_provider)" in
     codex)
       default_bin=${configured_bin:-codex}
-      fallback=/opt/homebrew/bin/codex
+      fallback="/home/linuxbrew/.linuxbrew/bin/codex /opt/homebrew/bin/codex"
       ;;
     claude-code)
       default_bin=${configured_bin:-claude}
-      fallback=/opt/homebrew/bin/claude
+      fallback="/home/linuxbrew/.linuxbrew/bin/claude /opt/homebrew/bin/claude"
       ;;
     opencode)
       default_bin=${configured_bin:-opencode}
-      fallback=/opt/homebrew/bin/opencode
+      fallback="/home/linuxbrew/.linuxbrew/bin/opencode /opt/homebrew/bin/opencode"
       ;;
     *)
       default_bin=${configured_bin:-$(weztrunk_agent_provider)}
@@ -99,10 +99,12 @@ weztrunk_find_agent_bin() {
     return 0
   fi
 
-  if [ -n "$fallback" ] && [ -x "$fallback" ]; then
-    printf '%s\n' "$fallback"
-    return 0
-  fi
+  for fallback_path in $fallback; do
+    if [ -n "$fallback_path" ] && [ -x "$fallback_path" ]; then
+      printf '%s\n' "$fallback_path"
+      return 0
+    fi
+  done
 
   printf 'No agent CLI found for provider %s. Set WEZTRUNK_AGENT_BIN or install %s.\n' "$(weztrunk_agent_provider)" "$default_bin" >&2
   exit 127
