@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env bash
 
 set -eu
 
@@ -22,6 +22,36 @@ find_bin() {
   fi
 
   return 1
+}
+
+sanitize() {
+  printf '%s' "$1" | tr '/[:space:]' '--' | tr -cs '[:alnum:]._-' '-'
+}
+
+current_repo_name() {
+  common_dir=$(git -C "$PWD" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+
+  if [ "$(basename "$common_dir")" = ".git" ]; then
+    basename "$(dirname "$common_dir")"
+    return
+  fi
+
+  basename "$common_dir"
+}
+
+launch_agent_from_current_worktree() {
+  branch=$(git -C "$PWD" branch --show-current 2>/dev/null || true)
+  if [ -z "$branch" ]; then
+    printf 'Current worktree is detached; cannot launch branch-scoped agent.\n' >&2
+    exit 64
+  fi
+
+  repo=$(current_repo_name) || {
+    printf 'Could not determine repository name for %s\n' "$PWD" >&2
+    exit 64
+  }
+
+  exec "$runner" "$repo" "$(sanitize "$branch")" "$@"
 }
 
 run_switch() {
@@ -69,9 +99,16 @@ execute_cmd=$runner" '{{ repo }}' '{{ branch | sanitize }}'"
 
 case "$mode" in
   pick)
-    branch=$("$wt_bin" -C "$repo_root" switch --no-cd) || exit $?
-    [ -n "$branch" ] || exit 0
-    run_switch "$branch" "$@"
+    if [ "$#" -gt 0 ] && [ "$1" = "--" ]; then
+      shift
+    fi
+
+    WORKTRUNK_BIN=$wt_bin
+    export WORKTRUNK_BIN
+    eval "$("$wt_bin" config shell init bash)"
+
+    wt -C "$repo_root" switch || exit $?
+    launch_agent_from_current_worktree "$@"
     ;;
   switch)
     [ "$#" -ge 1 ] || usage
