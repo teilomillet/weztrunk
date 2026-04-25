@@ -1,0 +1,8 @@
+[Unit]
+Description=WezTrunk conservative repo pull
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/weztrunk repos pull --notify
+Nice=10
+TimeoutStartSec=120

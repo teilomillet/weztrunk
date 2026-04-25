@@ -1,0 +1,149 @@
+#!/bin/sh
+
+set -u
+
+fail_count=0
+warn_count=0
+
+ok() {
+  printf '[ok]   %s\n' "$1"
+}
+
+warn() {
+  warn_count=$((warn_count + 1))
+  printf '[warn] %s\n' "$1"
+}
+
+fail() {
+  fail_count=$((fail_count + 1))
+  printf '[fail] %s\n' "$1"
+}
+
+check_command() {
+  name=$1
+  required=${2:-required}
+
+  if command -v "$name" >/dev/null 2>&1; then
+    ok "$name: $(command -v "$name")"
+  elif [ "$required" = "optional" ]; then
+    warn "$name: not found"
+  else
+    fail "$name: not found"
+  fi
+}
+
+check_symlink() {
+  target=$1
+  expected=$2
+
+  if [ ! -e "$target" ] && [ ! -L "$target" ]; then
+    fail "$target: missing"
+    return
+  fi
+
+  if [ -L "$target" ]; then
+    resolved=$(readlink -f "$target" 2>/dev/null || true)
+    if [ "$resolved" = "$expected" ]; then
+      ok "$target -> $resolved"
+    else
+      warn "$target -> $resolved, expected $expected"
+    fi
+  else
+    warn "$target exists but is not a symlink"
+  fi
+}
+
+check_timer() {
+  unit=$1
+
+  if ! command -v systemctl >/dev/null 2>&1; then
+    warn "$unit: systemctl not found"
+    return
+  fi
+
+  if systemctl --user is-enabled "$unit" >/dev/null 2>&1; then
+    enabled=enabled
+  else
+    enabled=disabled
+  fi
+
+  if systemctl --user is-active "$unit" >/dev/null 2>&1; then
+    active=active
+  else
+    active=inactive
+  fi
+
+  if [ "$enabled" = "enabled" ] && [ "$active" = "active" ]; then
+    ok "$unit: enabled and active"
+  else
+    warn "$unit: $enabled, $active"
+  fi
+}
+
+script_path=$0
+if command -v readlink >/dev/null 2>&1; then
+  resolved=$(readlink -f "$0" 2>/dev/null || true)
+  if [ -n "$resolved" ]; then
+    script_path=$resolved
+  fi
+fi
+
+repo_root=$(CDPATH= cd -- "$(dirname "$script_path")/../.." && pwd)
+
+printf 'WezTrunk doctor\n'
+printf 'repo: %s\n\n' "$repo_root"
+
+printf 'Commands\n'
+check_command git
+check_command wt
+check_command wezterm optional
+check_command dtach
+check_command gh optional
+check_command systemctl optional
+check_command notify-send optional
+
+printf '\nInstall links\n'
+check_symlink "$HOME/.local/bin/weztrunk" "$repo_root/.local/bin/weztrunk"
+check_symlink "$HOME/.local/bin/weztrunk-repos" "$repo_root/.local/bin/weztrunk-repos"
+check_symlink "$HOME/.local/bin/weztrunk-backup" "$repo_root/.local/bin/weztrunk-backup"
+check_symlink "$HOME/.local/bin/weztrunk-doctor" "$repo_root/.local/bin/weztrunk-doctor"
+check_symlink "$HOME/.config/weztrunk/repos.txt" "$repo_root/.config/weztrunk/repos.txt"
+check_symlink "$HOME/.config/systemd/user/weztrunk-repos-pull.timer" "$repo_root/.config/systemd/user/weztrunk-repos-pull.timer"
+check_symlink "$HOME/.config/systemd/user/weztrunk-work-backup.timer" "$repo_root/.config/systemd/user/weztrunk-work-backup.timer"
+
+printf '\nGitHub and SSH\n'
+if command -v gh >/dev/null 2>&1; then
+  if gh auth status >/tmp/weztrunk-doctor-gh.$$ 2>&1; then
+    ok 'gh auth status: authenticated'
+  else
+    warn "gh auth status: $(sed -n '1p' /tmp/weztrunk-doctor-gh.$$)"
+  fi
+  rm -f /tmp/weztrunk-doctor-gh.$$
+fi
+
+if command -v ssh >/dev/null 2>&1; then
+  if ssh -G github.com >/dev/null 2>&1; then
+    ok 'ssh config: usable for github.com'
+  else
+    warn 'ssh config: ssh -G github.com failed; WezTrunk pull uses a safe fallback'
+  fi
+fi
+
+printf '\nTimers\n'
+check_timer weztrunk-repos-pull.timer
+check_timer weztrunk-work-backup.timer
+
+printf '\nWatched repos\n'
+if [ -x "$HOME/.local/bin/weztrunk" ]; then
+  "$HOME/.local/bin/weztrunk" repos status || warn 'weztrunk repos status failed'
+else
+  warn 'weztrunk command not installed; cannot show repo status'
+fi
+
+printf '\nSummary: %s warning(s), %s failure(s)\n' "$warn_count" "$fail_count"
+
+if [ "$fail_count" -gt 0 ]; then
+  exit 1
+fi
+
+exit 0

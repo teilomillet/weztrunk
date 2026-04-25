@@ -6,9 +6,12 @@ manual_runner=${WEZTRUNK_MANUAL_RUNNER:-"$HOME/.local/bin/weztrunk-manual"}
 switch_runner=${WEZTRUNK_SWITCH_RUNNER:-"$HOME/.local/bin/weztrunk-switch"}
 agent_runner=${WEZTRUNK_AGENT_RUNNER:-"$HOME/.local/bin/weztrunk-agent"}
 config_runner=${WEZTRUNK_CONFIG_RUNNER:-"$HOME/.local/bin/weztrunk-config"}
+repos_runner=${WEZTRUNK_REPOS_RUNNER:-"$HOME/.local/bin/weztrunk-repos"}
+backup_runner=${WEZTRUNK_BACKUP_RUNNER:-"$HOME/.local/bin/weztrunk-backup"}
+doctor_runner=${WEZTRUNK_DOCTOR_RUNNER:-"$HOME/.local/bin/weztrunk-doctor"}
 
 usage() {
-  printf 'Usage: %s <man|profile|switch|agent> [args...]\n' "$0" >&2
+  printf 'Usage: %s <man|profile|repos|backup|doctor|switch|agent> [args...]\n' "$0" >&2
   exit 64
 }
 
@@ -46,6 +49,15 @@ case "$cmd" in
         profile_usage
         ;;
     esac
+    ;;
+  repos)
+    exec "$repos_runner" "$@"
+    ;;
+  backup|backups)
+    exec "$backup_runner" "$@"
+    ;;
+  doctor)
+    exec "$doctor_runner" "$@"
     ;;
   switch)
     exec "$switch_runner" "$@"

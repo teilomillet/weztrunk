@@ -61,6 +61,7 @@ link_file "$repo_root/.wezterm.lua" "$HOME/.wezterm.lua"
 link_file "$repo_root/.config/worktrunk/config.toml" "$HOME/.config/worktrunk/config.toml"
 link_file "$repo_root/.config/weztrunk/MANUAL.md" "$HOME/.config/weztrunk/MANUAL.md"
 link_file "$repo_root/.config/weztrunk/config.toml" "$HOME/.config/weztrunk/config.toml"
+link_file "$repo_root/.config/weztrunk/repos.txt" "$HOME/.config/weztrunk/repos.txt"
 link_file "$repo_root/.config/weztrunk/agent-profile.sh" "$HOME/.config/weztrunk/agent-profile.sh"
 link_file "$repo_root/.config/weztrunk/providers/codex/launch.args" "$HOME/.config/weztrunk/providers/codex/launch.args"
 link_file "$repo_root/.config/weztrunk/providers/codex/commit.args" "$HOME/.config/weztrunk/providers/codex/commit.args"
@@ -70,11 +71,18 @@ link_file "$repo_root/.config/weztrunk/providers/opencode/launch.args" "$HOME/.c
 link_file "$repo_root/.config/weztrunk/providers/opencode/commit.args" "$HOME/.config/weztrunk/providers/opencode/commit.args"
 link_file "$repo_root/.local/bin/weztrunk-agent" "$HOME/.local/bin/weztrunk-agent"
 link_file "$repo_root/.local/bin/weztrunk" "$HOME/.local/bin/weztrunk"
+link_file "$repo_root/.local/bin/weztrunk-backup" "$HOME/.local/bin/weztrunk-backup"
 link_file "$repo_root/.local/bin/weztrunk-config" "$HOME/.local/bin/weztrunk-config"
+link_file "$repo_root/.local/bin/weztrunk-doctor" "$HOME/.local/bin/weztrunk-doctor"
 link_file "$repo_root/.local/bin/weztrunk-manual" "$HOME/.local/bin/weztrunk-manual"
+link_file "$repo_root/.local/bin/weztrunk-repos" "$HOME/.local/bin/weztrunk-repos"
 link_file "$repo_root/.local/bin/weztrunk-switch" "$HOME/.local/bin/weztrunk-switch"
 link_file "$repo_root/.local/bin/wt-code" "$HOME/.local/bin/wt-code"
 link_file "$repo_root/.local/bin/worktrunk-code-commit" "$HOME/.local/bin/worktrunk-code-commit"
+link_file "$repo_root/.config/systemd/user/weztrunk-repos-pull.service" "$HOME/.config/systemd/user/weztrunk-repos-pull.service"
+link_file "$repo_root/.config/systemd/user/weztrunk-repos-pull.timer" "$HOME/.config/systemd/user/weztrunk-repos-pull.timer"
+link_file "$repo_root/.config/systemd/user/weztrunk-work-backup.service" "$HOME/.config/systemd/user/weztrunk-work-backup.service"
+link_file "$repo_root/.config/systemd/user/weztrunk-work-backup.timer" "$HOME/.config/systemd/user/weztrunk-work-backup.timer"
 link_file "$repo_root/shell/weztrunk.sh" "$HOME/.config/weztrunk/weztrunk.sh"
 link_file "$repo_root/shell/weztrunk.zsh" "$HOME/.config/weztrunk/weztrunk.zsh"
 
@@ -83,8 +91,11 @@ chmod +x \
   "$HOME/.config/weztrunk/agent-profile.sh" \
   "$HOME/.local/bin/weztrunk-agent" \
   "$HOME/.local/bin/weztrunk" \
+  "$HOME/.local/bin/weztrunk-backup" \
   "$HOME/.local/bin/weztrunk-config" \
+  "$HOME/.local/bin/weztrunk-doctor" \
   "$HOME/.local/bin/weztrunk-switch" \
+  "$HOME/.local/bin/weztrunk-repos" \
   "$HOME/.local/bin/wt-code" \
   "$HOME/.local/bin/worktrunk-code-commit"
 

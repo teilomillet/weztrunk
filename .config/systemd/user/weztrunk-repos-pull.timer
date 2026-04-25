@@ -1,0 +1,13 @@
+[Unit]
+Description=WezTrunk conservative repo pull every 5 minutes
+
+[Timer]
+OnStartupSec=30sec
+OnUnitActiveSec=5min
+AccuracySec=30sec
+RandomizedDelaySec=30sec
+Persistent=true
+Unit=weztrunk-repos-pull.service
+
+[Install]
+WantedBy=timers.target

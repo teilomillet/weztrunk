@@ -1,0 +1,13 @@
+[Unit]
+Description=WezTrunk dirty work backup every 10 minutes
+
+[Timer]
+OnStartupSec=45sec
+OnUnitActiveSec=10min
+AccuracySec=60sec
+RandomizedDelaySec=60sec
+Persistent=true
+Unit=weztrunk-work-backup.service
+
+[Install]
+WantedBy=timers.target

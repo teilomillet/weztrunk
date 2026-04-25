@@ -1,0 +1,359 @@
+#!/bin/sh
+
+set -u
+
+config_path=${WEZTRUNK_REPOS_PATH:-"$HOME/.config/weztrunk/repos.txt"}
+state_dir=${WEZTRUNK_BACKUP_DIR:-"$HOME/.local/state/weztrunk/work-backups"}
+systemd_user_dir=${WEZTRUNK_SYSTEMD_USER_DIR:-"$HOME/.config/systemd/user"}
+timer_unit=weztrunk-work-backup.timer
+service_unit=weztrunk-work-backup.service
+notify_enabled=0
+copied_untracked=1
+max_untracked_bytes=${WEZTRUNK_BACKUP_MAX_UNTRACKED_BYTES:-262144}
+created_count=0
+skipped_count=0
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  weztrunk-backup snapshot [--notify] [--config PATH] [--state-dir DIR] [--no-untracked-copy]
+  weztrunk-backup status [--config PATH] [--state-dir DIR]
+  weztrunk-backup timer <enable|disable|status>
+EOF
+  exit 64
+}
+
+timer_usage() {
+  printf 'Usage: %s timer <enable|disable|status>\n' "$0" >&2
+  exit 64
+}
+
+expand_path() {
+  raw=$1
+
+  case "$raw" in
+    '~')
+      printf '%s\n' "$HOME"
+      ;;
+    '~/'*)
+      printf '%s/%s\n' "$HOME" "${raw#\~/}"
+      ;;
+    '$HOME')
+      printf '%s\n' "$HOME"
+      ;;
+    '$HOME/'*)
+      printf '%s/%s\n' "$HOME" "${raw#\$HOME/}"
+      ;;
+    *)
+      printf '%s\n' "$raw"
+      ;;
+  esac
+}
+
+repo_name() {
+  basename "$1"
+}
+
+is_git_checkout() {
+  git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1
+}
+
+hash_file() {
+  file=$1
+
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  else
+    cksum "$file" | awk '{print $1 "-" $2}'
+  fi
+}
+
+hash_text() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 | awk '{print $1}'
+  else
+    cksum | awk '{print $1 "-" $2}'
+  fi
+}
+
+repo_key() {
+  repo=$1
+  name=$(repo_name "$repo" | tr -c 'A-Za-z0-9._-' '-')
+  hash=$(printf '%s' "$repo" | hash_text | cut -c 1-12)
+  printf '%s-%s\n' "$name" "$hash"
+}
+
+process_repos() {
+  handler=$1
+
+  if [ ! -f "$config_path" ]; then
+    printf 'WezTrunk repos config not found: %s\n' "$config_path" >&2
+    return 66
+  fi
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    case "$line" in
+      ''|'#'*)
+        continue
+        ;;
+    esac
+
+    repo=$(expand_path "$line")
+    "$handler" "$repo"
+  done < "$config_path"
+}
+
+notify_result() {
+  [ "$notify_enabled" -eq 1 ] || return 0
+
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send "WezTrunk work backup" "created: $created_count, skipped: $skipped_count" >/dev/null 2>&1 || true
+  fi
+}
+
+write_fingerprint_input() {
+  repo=$1
+  out=$2
+
+  {
+    printf 'status\n'
+    git -C "$repo" status --porcelain=v1 | sed '/^?? \.codex$/d'
+    printf '\nstaged\n'
+    git -C "$repo" diff --staged --binary
+    printf '\nunstaged\n'
+    git -C "$repo" diff --binary
+    printf '\nuntracked\n'
+    git -C "$repo" ls-files --others --exclude-standard | sed '/^\.codex$/d' | while IFS= read -r path; do
+      file=$repo/$path
+      printf '%s\t' "$path"
+      if [ -f "$file" ]; then
+        hash_file "$file"
+      else
+        printf 'missing\n'
+      fi
+    done
+  } > "$out"
+}
+
+copy_untracked_files() {
+  repo=$1
+  dest=$2
+  skipped=$dest/untracked-skipped.txt
+
+  git -C "$repo" ls-files --others --exclude-standard | sed '/^\.codex$/d' | while IFS= read -r path; do
+    src=$repo/$path
+    target=$dest/untracked/$path
+
+    if [ ! -f "$src" ]; then
+      printf '%s\tmissing-or-not-file\n' "$path" >> "$skipped"
+      continue
+    fi
+
+    size=$(wc -c < "$src" | tr -d ' ')
+    if [ "$size" -gt "$max_untracked_bytes" ]; then
+      printf '%s\tsize:%s\n' "$path" "$size" >> "$skipped"
+      continue
+    fi
+
+    if ! grep -Iq . "$src"; then
+      printf '%s\tbinary-or-empty\n' "$path" >> "$skipped"
+      continue
+    fi
+
+    mkdir -p "$(dirname "$target")"
+    cp "$src" "$target"
+  done
+}
+
+snapshot_repo() {
+  repo=$1
+  name=$(repo_name "$repo")
+
+  if ! is_git_checkout "$repo"; then
+    printf 'skip %s: not a git checkout (%s)\n' "$name" "$repo"
+    skipped_count=$((skipped_count + 1))
+    return
+  fi
+
+  if [ -z "$(git -C "$repo" status --porcelain=v1 | sed '/^?? \.codex$/d')" ]; then
+    printf 'ok %s: clean, no backup needed\n' "$repo"
+    return
+  fi
+
+  key=$(repo_key "$repo")
+  repo_state_dir=$state_dir/$key
+  mkdir -p "$repo_state_dir"
+
+  tmp=$(mktemp "${TMPDIR:-/tmp}/weztrunk-backup.XXXXXX") || return 1
+  write_fingerprint_input "$repo" "$tmp"
+  fingerprint=$(hash_file "$tmp")
+
+  latest_fingerprint=$repo_state_dir/latest.fingerprint
+  if [ -f "$latest_fingerprint" ] && [ "$(cat "$latest_fingerprint")" = "$fingerprint" ]; then
+    printf 'ok %s: dirty state already backed up\n' "$repo"
+    rm -f "$tmp"
+    return
+  fi
+
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  dest=$repo_state_dir/$stamp
+  mkdir -p "$dest"
+
+  {
+    printf 'repo=%s\n' "$repo"
+    printf 'branch=%s\n' "$(git -C "$repo" branch --show-current 2>/dev/null || true)"
+    printf 'head=%s\n' "$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)"
+    printf 'created_utc=%s\n' "$stamp"
+    printf 'fingerprint=%s\n' "$fingerprint"
+  } > "$dest/metadata.txt"
+
+  git -C "$repo" status --porcelain=v1 --branch | sed '/^?? \.codex$/d' > "$dest/status.txt"
+  git -C "$repo" diff --staged --binary > "$dest/staged.diff"
+  git -C "$repo" diff --binary > "$dest/unstaged.diff"
+  git -C "$repo" ls-files --others --exclude-standard | sed '/^\.codex$/d' > "$dest/untracked.txt"
+  cp "$tmp" "$dest/fingerprint-input.txt"
+
+  if [ "$copied_untracked" -eq 1 ]; then
+    copy_untracked_files "$repo" "$dest"
+  fi
+
+  printf '%s\n' "$fingerprint" > "$latest_fingerprint"
+  ln -sfn "$dest" "$repo_state_dir/latest"
+  rm -f "$tmp"
+  created_count=$((created_count + 1))
+  printf 'ok %s: backed up dirty work to %s\n' "$repo" "$dest"
+}
+
+status_repo() {
+  repo=$1
+  name=$(repo_name "$repo")
+  key=$(repo_key "$repo")
+  repo_state_dir=$state_dir/$key
+
+  if [ -L "$repo_state_dir/latest" ]; then
+    latest=$(readlink "$repo_state_dir/latest")
+  else
+    latest='-'
+  fi
+
+  if is_git_checkout "$repo"; then
+    dirty=$(git -C "$repo" status --porcelain=v1 | sed '/^?? \.codex$/d' | wc -l | tr -d ' ')
+  else
+    dirty='missing'
+  fi
+
+  printf '%-18s %-12s %s\n' "$name" "$dirty" "$latest"
+}
+
+run_snapshot() {
+  lock_dir="${TMPDIR:-/tmp}/weztrunk-work-backup.lock"
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    printf 'weztrunk-backup: another snapshot run is already active\n'
+    return 0
+  fi
+  trap 'rmdir "$lock_dir"' EXIT HUP INT TERM
+
+  mkdir -p "$state_dir"
+  process_repos snapshot_repo
+  rc=$?
+  notify_result
+  return "$rc"
+}
+
+run_status() {
+  printf 'backup dir: %s\n' "$state_dir"
+  printf '%-18s %-12s %s\n' 'repo' 'dirty' 'latest backup'
+  printf '%-18s %-12s %s\n' '----' '-----' '-------------'
+  process_repos status_repo
+}
+
+timer_cmd() {
+  action=${1:-}
+  [ -n "$action" ] || timer_usage
+
+  case "$action" in
+    enable)
+      if [ ! -e "$systemd_user_dir/$timer_unit" ] || [ ! -e "$systemd_user_dir/$service_unit" ]; then
+        printf 'Timer units are not installed under %s. Run scripts/install.sh first.\n' "$systemd_user_dir" >&2
+        exit 66
+      fi
+      systemctl --user daemon-reload
+      systemctl --user enable --now "$timer_unit"
+      ;;
+    disable)
+      systemctl --user disable --now "$timer_unit"
+      ;;
+    status)
+      systemctl --user list-timers "$timer_unit" --no-pager
+      systemctl --user status "$service_unit" --no-pager || true
+      ;;
+    *)
+      timer_usage
+      ;;
+  esac
+}
+
+cmd=${1:-snapshot}
+shift 2>/dev/null || true
+
+case "$cmd" in
+  snapshot)
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --notify)
+          notify_enabled=1
+          ;;
+        --config)
+          shift
+          [ "$#" -gt 0 ] || usage
+          config_path=$1
+          ;;
+        --state-dir)
+          shift
+          [ "$#" -gt 0 ] || usage
+          state_dir=$1
+          ;;
+        --no-untracked-copy)
+          copied_untracked=0
+          ;;
+        *)
+          usage
+          ;;
+      esac
+      shift
+    done
+    run_snapshot
+    ;;
+  status)
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --config)
+          shift
+          [ "$#" -gt 0 ] || usage
+          config_path=$1
+          ;;
+        --state-dir)
+          shift
+          [ "$#" -gt 0 ] || usage
+          state_dir=$1
+          ;;
+        *)
+          usage
+          ;;
+      esac
+      shift
+    done
+    run_status
+    ;;
+  timer)
+    timer_cmd "$@"
+    ;;
+  *)
+    usage
+    ;;
+esac

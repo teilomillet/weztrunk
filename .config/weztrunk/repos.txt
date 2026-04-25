@@ -1,0 +1,6 @@
+# Repositories watched by `weztrunk repos`.
+# One path per line. Blank lines and comments are ignored.
+# `~` and `$HOME` are expanded.
+~/Code/vauban
+~/Code/kayak
+~/Code/weztrunk

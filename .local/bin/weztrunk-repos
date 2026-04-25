@@ -1,0 +1,340 @@
+#!/bin/sh
+
+set -u
+
+config_path=${WEZTRUNK_REPOS_PATH:-"$HOME/.config/weztrunk/repos.txt"}
+systemd_user_dir=${WEZTRUNK_SYSTEMD_USER_DIR:-"$HOME/.config/systemd/user"}
+timer_unit=weztrunk-repos-pull.timer
+service_unit=weztrunk-repos-pull.service
+notify_enabled=0
+skip_messages=
+
+usage() {
+  cat >&2 <<'EOF'
+Usage:
+  weztrunk-repos status [--config PATH]
+  weztrunk-repos pull [--notify] [--config PATH]
+  weztrunk-repos timer <enable|disable|status>
+EOF
+  exit 64
+}
+
+timer_usage() {
+  printf 'Usage: %s timer <enable|disable|status>\n' "$0" >&2
+  exit 64
+}
+
+expand_path() {
+  raw=$1
+
+  case "$raw" in
+    '~')
+      printf '%s\n' "$HOME"
+      ;;
+    '~/'*)
+      printf '%s/%s\n' "$HOME" "${raw#\~/}"
+      ;;
+    '$HOME')
+      printf '%s\n' "$HOME"
+      ;;
+    '$HOME/'*)
+      printf '%s/%s\n' "$HOME" "${raw#\$HOME/}"
+      ;;
+    *)
+      printf '%s\n' "$raw"
+      ;;
+  esac
+}
+
+repo_name() {
+  basename "$1"
+}
+
+is_git_checkout() {
+  git -C "$1" rev-parse --is-inside-work-tree >/dev/null 2>&1
+}
+
+record_skip() {
+  message=$1
+  if [ -n "$skip_messages" ]; then
+    skip_messages="${skip_messages}
+${message}"
+  else
+    skip_messages=$message
+  fi
+}
+
+notify_skips() {
+  [ "$notify_enabled" -eq 1 ] || return 0
+  [ -n "$skip_messages" ] || return 0
+
+  if command -v notify-send >/dev/null 2>&1; then
+    notify-send "WezTrunk repo pull skipped work" "$skip_messages" >/dev/null 2>&1 || true
+  fi
+}
+
+configure_git_env() {
+  export GIT_TERMINAL_PROMPT=${GIT_TERMINAL_PROMPT:-0}
+
+  if [ -n "${WEZTRUNK_GIT_SSH_COMMAND:-}" ]; then
+    export GIT_SSH_COMMAND=$WEZTRUNK_GIT_SSH_COMMAND
+    return
+  fi
+
+  if command -v ssh >/dev/null 2>&1; then
+    if ssh -G github.com >/dev/null 2>&1; then
+      export GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=10'
+    else
+      export GIT_SSH_COMMAND='ssh -F /dev/null -o BatchMode=yes -o ConnectTimeout=10'
+    fi
+  fi
+}
+
+process_repos() {
+  handler=$1
+
+  if [ ! -f "$config_path" ]; then
+    printf 'WezTrunk repos config not found: %s\n' "$config_path" >&2
+    return 66
+  fi
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    line=$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    case "$line" in
+      ''|'#'*)
+        continue
+        ;;
+    esac
+
+    repo=$(expand_path "$line")
+    "$handler" "$repo"
+  done < "$config_path"
+}
+
+git_branch() {
+  git -C "$1" branch --show-current 2>/dev/null || true
+}
+
+git_upstream() {
+  git -C "$1" rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null || true
+}
+
+git_dirty_count() {
+  count=$(git -C "$1" status --porcelain=v1 2>/dev/null | sed '/^?? \.codex$/d' | wc -l | tr -d ' ')
+  printf '%s\n' "${count:-0}"
+}
+
+git_ahead_behind() {
+  repo=$1
+  upstream=$2
+
+  counts=$(git -C "$repo" rev-list --left-right --count "HEAD...$upstream" 2>/dev/null || true)
+  if [ -z "$counts" ]; then
+    printf '? ?\n'
+    return
+  fi
+
+  printf '%s\n' "$counts"
+}
+
+status_repo() {
+  repo=$1
+  name=$(repo_name "$repo")
+
+  if ! is_git_checkout "$repo"; then
+    printf '%-18s %-18s %-12s %-12s %s\n' "$name" '-' 'missing' '-' "$repo"
+    return
+  fi
+
+  branch=$(git_branch "$repo")
+  if [ -z "$branch" ]; then
+    branch='detached'
+  fi
+
+  dirty=$(git_dirty_count "$repo")
+  if [ "$dirty" = "0" ]; then
+    worktree='clean'
+  else
+    worktree="dirty:$dirty"
+  fi
+
+  upstream=$(git_upstream "$repo")
+  if [ -n "$upstream" ]; then
+    set -- $(git_ahead_behind "$repo" "$upstream")
+    ahead=$1
+    behind=$2
+    sync="+$ahead/-$behind"
+  else
+    sync='no-upstream'
+  fi
+
+  last=$(git -C "$repo" log -1 --format='%h %cd %s' --date=short 2>/dev/null || true)
+  printf '%-18s %-18s %-12s %-12s %s\n' "$name" "$branch" "$worktree" "$sync" "$last"
+}
+
+pull_repo() {
+  repo=$1
+  name=$(repo_name "$repo")
+
+  if ! is_git_checkout "$repo"; then
+    message="$name: not a git checkout ($repo)"
+    printf 'skip %s\n' "$message"
+    record_skip "$message"
+    return
+  fi
+
+  branch=$(git_branch "$repo")
+  if [ -z "$branch" ]; then
+    message="$name: detached HEAD"
+    printf 'skip %s\n' "$message"
+    record_skip "$message"
+    return
+  fi
+
+  upstream=$(git_upstream "$repo")
+  if [ -z "$upstream" ]; then
+    message="$name: $branch has no upstream"
+    printf 'skip %s\n' "$message"
+    record_skip "$message"
+    return
+  fi
+
+  dirty=$(git_dirty_count "$repo")
+  if [ "$dirty" != "0" ]; then
+    message="$name: working tree has $dirty local change(s)"
+    printf 'skip %s\n' "$message"
+    record_skip "$message"
+    return
+  fi
+
+  remote=${upstream%%/*}
+  if [ "$remote" = "$upstream" ]; then
+    remote=origin
+  fi
+
+  if ! git -C "$repo" fetch --prune "$remote"; then
+    message="$name: fetch from $remote failed"
+    printf 'skip %s\n' "$message"
+    record_skip "$message"
+    return
+  fi
+
+  set -- $(git_ahead_behind "$repo" "$upstream")
+  ahead=$1
+  behind=$2
+
+  if [ "$ahead" = "0" ] && [ "$behind" = "0" ]; then
+    printf 'ok %s: already up to date on %s\n' "$repo" "$branch"
+    return
+  fi
+
+  if [ "$ahead" = "0" ]; then
+    if git -C "$repo" pull --ff-only; then
+      printf 'ok %s: fast-forwarded %s by %s commit(s)\n' "$repo" "$branch" "$behind"
+    else
+      message="$name: fast-forward pull failed"
+      printf 'skip %s\n' "$message"
+      record_skip "$message"
+    fi
+    return
+  fi
+
+  message="$name: $branch is ahead or diverged from $upstream (+$ahead/-$behind)"
+  printf 'skip %s\n' "$message"
+  record_skip "$message"
+}
+
+run_status() {
+  printf '%-18s %-18s %-12s %-12s %s\n' 'repo' 'branch' 'worktree' 'sync' 'last commit'
+  printf '%-18s %-18s %-12s %-12s %s\n' '----' '------' '--------' '----' '-----------'
+  process_repos status_repo
+}
+
+run_pull() {
+  configure_git_env
+
+  lock_dir="${TMPDIR:-/tmp}/weztrunk-repos-pull.lock"
+  if ! mkdir "$lock_dir" 2>/dev/null; then
+    printf 'weztrunk-repos: another pull run is already active\n'
+    return 0
+  fi
+  trap 'rmdir "$lock_dir"' EXIT HUP INT TERM
+
+  process_repos pull_repo
+  rc=$?
+  notify_skips
+  return "$rc"
+}
+
+timer_cmd() {
+  action=${1:-}
+  [ -n "$action" ] || timer_usage
+
+  case "$action" in
+    enable)
+      if [ ! -e "$systemd_user_dir/$timer_unit" ] || [ ! -e "$systemd_user_dir/$service_unit" ]; then
+        printf 'Timer units are not installed under %s. Run scripts/install.sh first.\n' "$systemd_user_dir" >&2
+        exit 66
+      fi
+      systemctl --user daemon-reload
+      systemctl --user enable --now "$timer_unit"
+      ;;
+    disable)
+      systemctl --user disable --now "$timer_unit"
+      ;;
+    status)
+      systemctl --user list-timers "$timer_unit" --no-pager
+      systemctl --user status "$service_unit" --no-pager || true
+      ;;
+    *)
+      timer_usage
+      ;;
+  esac
+}
+
+cmd=${1:-status}
+shift 2>/dev/null || true
+
+case "$cmd" in
+  status)
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --config)
+          shift
+          [ "$#" -gt 0 ] || usage
+          config_path=$1
+          ;;
+        *)
+          usage
+          ;;
+      esac
+      shift
+    done
+    run_status
+    ;;
+  pull)
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --notify)
+          notify_enabled=1
+          ;;
+        --config)
+          shift
+          [ "$#" -gt 0 ] || usage
+          config_path=$1
+          ;;
+        *)
+          usage
+          ;;
+      esac
+      shift
+    done
+    run_pull
+    ;;
+  timer)
+    timer_cmd "$@"
+    ;;
+  *)
+    usage
+    ;;
+esac

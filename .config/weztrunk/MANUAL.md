@@ -1,10 +1,11 @@
 # WezTrunk Manual
 
-WezTrunk is three things glued together:
+WezTrunk is four things glued together:
 
 1. WezTerm keybindings and command-palette actions
 2. Worktrunk worktree switching, aliases, and hooks
 3. A branch-scoped code-agent session runner built on `dtach`
+4. Conservative repo upkeep, dirty-work backup, and doctor checks for watched work repos
 
 ## Daily Use
 
@@ -21,7 +22,18 @@ WezTrunk is three things glued together:
 - `weztrunk man remove`: search this manual for a topic
 - `weztrunk profile`: show the active provider/profile
 - `weztrunk profile list`: list the named profiles from `config.toml`
+- `weztrunk repos status`: show watched repo branch, dirty state, ahead/behind, and latest commit
+- `weztrunk repos pull`: safely fetch and fast-forward watched repos
+- `weztrunk repos timer enable`: enable the user-level auto-pull timer
+- `weztrunk backup snapshot`: snapshot dirty watched repos into local state
+- `weztrunk backup timer enable`: enable the dirty-work backup timer
+- `weztrunk doctor`: check install links, dependencies, GitHub/SSH state, timers, and watched repos
 - `wthelp` or `wtm`: same manual command
+- `wzt`: short alias for `weztrunk`, if that name is not already taken
+- `wts`: short alias for `weztrunk repos status`
+- `wtpull`: short alias for `weztrunk repos pull`
+- `wtd`: short alias for `weztrunk doctor`
+- `wtb`: short alias for `weztrunk backup snapshot`
 - `wt step weztrunk-agent`: re-attach the current worktree's agent session
 - `wt step weztrunk-hydrate`: copy gitignored files into the current worktree on demand
 - `wt step weztrunk-manual`: print this manual from inside a repo
@@ -34,7 +46,15 @@ WezTrunk is three things glued together:
 - `weztrunk man profiles`: jump straight to the profile section
 - `weztrunk profile`: show the active provider/profile/binary
 - `weztrunk profile list`: list all named profiles
+- `weztrunk repos status`: quick status dashboard for watched repos
+- `weztrunk repos pull`: conservative fast-forward updater
+- `weztrunk backup snapshot`: local dirty-work snapshot
+- `weztrunk doctor`: install and environment checkup
 - `wtp`: short alias for `weztrunk profile`
+- `wts`: short alias for `weztrunk repos status`
+- `wtpull`: short alias for `weztrunk repos pull`
+- `wtd`: short alias for `weztrunk doctor`
+- `wtb`: short alias for `weztrunk backup snapshot`
 
 ## WezTerm
 
@@ -75,6 +95,76 @@ WezTrunk is three things glued together:
 - `weztrunk man session`: jump to this section
 - each repo/branch gets a separate `dtach` socket
 - `wt remove` and `wt merge` trigger a Worktrunk `post-remove` hook that cleans up the branch session socket
+
+## Repo Upkeep
+
+Watched repos are listed in `~/.config/weztrunk/repos.txt`, one path per line. Blank lines and comments are ignored. `~` and `$HOME` are expanded.
+
+Default example:
+
+```text
+~/Code/vauban
+~/Code/kayak
+~/Code/weztrunk
+```
+
+Status:
+
+```sh
+weztrunk repos status
+wts
+```
+
+Safe pull:
+
+```sh
+weztrunk repos pull
+wtpull
+```
+
+The pull helper fetches each repo and fast-forwards only when the current branch is clean and behind its upstream. It skips missing repos, detached HEADs, branches with no upstream, local changes, and ahead/diverged branches.
+
+Timer management:
+
+```sh
+weztrunk repos timer enable
+weztrunk repos timer status
+weztrunk repos timer disable
+```
+
+On Linux with systemd user services, the timer runs shortly after login and then every five minutes. Timer pulls pass `--notify`, so skipped repos can trigger desktop notifications when `notify-send` is available.
+
+## Dirty-Work Backup
+
+Backups are local snapshots under `~/.local/state/weztrunk/work-backups` by default. They do not commit, stash, or modify the repo.
+
+Each dirty watched repo snapshot includes:
+
+- branch, HEAD, timestamp, and status
+- staged and unstaged binary-capable diffs
+- untracked file list
+- copies of small text untracked files
+
+Useful commands:
+
+```sh
+weztrunk backup snapshot
+weztrunk backup status
+weztrunk backup timer enable
+weztrunk backup timer status
+weztrunk backup timer disable
+```
+
+The backup timer runs shortly after login and then every ten minutes. Identical dirty states are deduplicated by fingerprint, so a repo does not get a new backup every tick unless the work changed.
+
+## Doctor
+
+```sh
+weztrunk doctor
+wtd
+```
+
+Doctor checks required commands, installed symlinks, GitHub CLI auth, SSH config, repo timers, backup timers, and watched repo status.
 
 ## Profiles
 
@@ -169,6 +259,8 @@ If a repo update adds new linked files, rerun `bash scripts/install.sh` once on 
 
 - manual: `~/.config/weztrunk/MANUAL.md`
 - config: `~/.config/weztrunk/config.toml`
+- watched repos: `~/.config/weztrunk/repos.txt`
+- dirty-work backups: `~/.local/state/weztrunk/work-backups`
 - profile: `~/.config/weztrunk/agent-profile.sh`
 - local override: `~/.config/weztrunk/agent-profile.local.sh`
 - provider flags: `~/.config/weztrunk/providers/`

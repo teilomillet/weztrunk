@@ -1,0 +1,8 @@
+[Unit]
+Description=WezTrunk dirty work backup
+
+[Service]
+Type=oneshot
+ExecStart=%h/.local/bin/weztrunk backup snapshot --notify
+Nice=10
+TimeoutStartSec=120

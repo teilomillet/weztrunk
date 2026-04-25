@@ -66,5 +66,33 @@ wtprofile() {
   "$weztrunk_cmd" profile "$@"
 }
 
+if ! command -v wzt >/dev/null 2>&1; then
+  wzt() {
+    weztrunk_cmd="$HOME/.local/bin/weztrunk"
+
+    if [ ! -x "$weztrunk_cmd" ]; then
+      printf 'WezTrunk command not found: %s\n' "$weztrunk_cmd" >&2
+      return 1
+    fi
+
+    "$weztrunk_cmd" "$@"
+  }
+fi
+
+wtrepos() {
+  weztrunk_cmd="$HOME/.local/bin/weztrunk"
+
+  if [ ! -x "$weztrunk_cmd" ]; then
+    printf 'WezTrunk command not found: %s\n' "$weztrunk_cmd" >&2
+    return 1
+  fi
+
+  "$weztrunk_cmd" repos "$@"
+}
+
 alias wtm='wtman'
 alias wtp='wtprofile'
+alias wts='wtrepos status'
+alias wtpull='wtrepos pull'
+alias wtd='wzt doctor'
+alias wtb='wzt backup snapshot'
