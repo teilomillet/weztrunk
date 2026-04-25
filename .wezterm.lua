@@ -63,16 +63,20 @@ local function path_from_cwd_uri(cwd)
 
   if type(cwd) == 'table' then
     if cwd.scheme == 'file' then
-      return cwd.file_path
+      return cwd.file_path or cwd.path
     end
 
     return nil
   end
 
   if type(cwd) == 'string' then
+    if cwd:sub(1, 1) == '/' or cwd:match('^%a:[/\\]') then
+      return cwd
+    end
+
     local parsed = wezterm.url.parse(cwd)
     if parsed and parsed.scheme == 'file' then
-      return parsed.file_path
+      return parsed.file_path or parsed.path
     end
   end
 
@@ -142,7 +146,19 @@ local function switch_workspace()
 end
 
 local function current_local_cwd(pane)
-  return path_from_cwd_uri(pane:get_current_working_dir())
+  local cwd = path_from_cwd_uri(pane:get_current_working_dir())
+  if cwd then
+    return cwd
+  end
+
+  if pane.get_foreground_process_info then
+    local process = pane:get_foreground_process_info()
+    if process then
+      return path_from_cwd_uri(process.cwd)
+    end
+  end
+
+  return nil
 end
 
 local function spawn_worktrunk_agent(window, pane, opts)
@@ -150,7 +166,7 @@ local function spawn_worktrunk_agent(window, pane, opts)
   if not cwd then
     window:toast_notification(
       'Worktrunk',
-      'Current pane has no local file-path cwd. Run this from a local shell pane.',
+      'Could not detect a local cwd. Open a local shell tab, cd into a git repo, then run wtx or press the shortcut again.',
       nil,
       5000
     )
