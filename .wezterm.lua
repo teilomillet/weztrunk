@@ -6,6 +6,17 @@ local config = wezterm.config_builder()
 local weztrunk_switch_runner = wezterm.home_dir .. '/.local/bin/weztrunk-switch'
 local weztrunk_cmd_runner = wezterm.home_dir .. '/.local/bin/weztrunk'
 local weztrunk_manual_runner = wezterm.home_dir .. '/.local/bin/weztrunk-manual'
+local target_triple = wezterm.target_triple or ''
+local is_linux = target_triple:find('linux') ~= nil
+
+-- Ubuntu/GNOME reserves a broad Super-key layer, so custom Linux shortcuts avoid CMD/SUPER.
+local leader_mods = is_linux and 'CTRL' or 'CMD'
+local primary_mods = is_linux and 'CTRL|SHIFT' or 'CMD'
+local primary_shift_mods = is_linux and 'CTRL|ALT|SHIFT' or 'CMD|SHIFT'
+local action_mods = is_linux and 'CTRL|SHIFT' or 'CMD|SHIFT'
+local pane_nav_mods = is_linux and 'ALT|SHIFT' or 'CMD|OPT'
+local pane_resize_mods = is_linux and 'CTRL|ALT|SHIFT' or 'CMD|CTRL'
+local pane_resize_arrow_mods = is_linux and 'CTRL|SHIFT' or pane_resize_mods
 
 local function get_appearance()
   if wezterm.gui then
@@ -314,7 +325,6 @@ config.color_scheme = scheme_for_appearance(get_appearance())
 config.set_environment_variables = {
   WEZTRUNK_APPEARANCE = get_appearance(),
 }
-config.text_min_contrast_ratio = 4.5
 config.use_fancy_tab_bar = false
 config.hide_tab_bar_if_only_one_tab = true
 config.tab_max_width = 32
@@ -331,38 +341,38 @@ config.adjust_window_size_when_changing_font_size = false
 config.unzoom_on_switch_pane = true
 config.enable_kitty_keyboard = true
 
-config.leader = { key = 'b', mods = 'CMD', timeout_milliseconds = 1000 }
+config.leader = { key = 'b', mods = leader_mods, timeout_milliseconds = 1000 }
 
 config.keys = {
-  { key = 'd', mods = 'CMD', action = split 'Right' },
-  { key = 'd', mods = 'CMD|SHIFT', action = split 'Down' },
-  { key = 'Enter', mods = 'CMD', action = act.TogglePaneZoomState },
-  { key = 'f', mods = 'CMD|SHIFT', action = act.Search 'CurrentSelectionOrEmptyString' },
-  { key = 'g', mods = 'CMD|SHIFT', action = worktrunk_picker() },
-  { key = 'l', mods = 'CMD|SHIFT', action = act.ShowLauncherArgs { flags = 'FUZZY|TABS|WORKSPACES|COMMANDS|KEY_ASSIGNMENTS' } },
-  { key = 'm', mods = 'CMD|SHIFT', action = open_weztrunk_manual() },
-  { key = 'p', mods = 'CMD|SHIFT', action = act.ActivateCommandPalette },
-  { key = '/', mods = 'CMD|SHIFT', action = search_weztrunk_manual() },
-  { key = 'r', mods = 'CMD|SHIFT', action = act.ReloadConfiguration },
-  { key = 'Space', mods = 'CMD|SHIFT', action = act.QuickSelect },
-  { key = '[', mods = 'CMD|SHIFT', action = act.ActivateTabRelative(-1) },
-  { key = ']', mods = 'CMD|SHIFT', action = act.ActivateTabRelative(1) },
-  { key = 'h', mods = 'CMD|OPT', action = act.ActivatePaneDirection 'Left' },
-  { key = 'j', mods = 'CMD|OPT', action = act.ActivatePaneDirection 'Down' },
-  { key = 'k', mods = 'CMD|OPT', action = act.ActivatePaneDirection 'Up' },
-  { key = 'l', mods = 'CMD|OPT', action = act.ActivatePaneDirection 'Right' },
-  { key = 'LeftArrow', mods = 'CMD|OPT', action = act.ActivatePaneDirection 'Left' },
-  { key = 'DownArrow', mods = 'CMD|OPT', action = act.ActivatePaneDirection 'Down' },
-  { key = 'UpArrow', mods = 'CMD|OPT', action = act.ActivatePaneDirection 'Up' },
-  { key = 'RightArrow', mods = 'CMD|OPT', action = act.ActivatePaneDirection 'Right' },
-  { key = 'h', mods = 'CMD|CTRL', action = act.AdjustPaneSize { 'Left', 3 } },
-  { key = 'j', mods = 'CMD|CTRL', action = act.AdjustPaneSize { 'Down', 3 } },
-  { key = 'k', mods = 'CMD|CTRL', action = act.AdjustPaneSize { 'Up', 3 } },
-  { key = 'l', mods = 'CMD|CTRL', action = act.AdjustPaneSize { 'Right', 3 } },
-  { key = 'LeftArrow', mods = 'CMD|CTRL', action = act.AdjustPaneSize { 'Left', 3 } },
-  { key = 'DownArrow', mods = 'CMD|CTRL', action = act.AdjustPaneSize { 'Down', 3 } },
-  { key = 'UpArrow', mods = 'CMD|CTRL', action = act.AdjustPaneSize { 'Up', 3 } },
-  { key = 'RightArrow', mods = 'CMD|CTRL', action = act.AdjustPaneSize { 'Right', 3 } },
+  { key = 'd', mods = primary_mods, action = split 'Right' },
+  { key = 'd', mods = primary_shift_mods, action = split 'Down' },
+  { key = 'Enter', mods = primary_mods, action = act.TogglePaneZoomState },
+  { key = 'f', mods = action_mods, action = act.Search 'CurrentSelectionOrEmptyString' },
+  { key = 'g', mods = action_mods, action = worktrunk_picker() },
+  { key = 'l', mods = action_mods, action = act.ShowLauncherArgs { flags = 'FUZZY|TABS|WORKSPACES|COMMANDS|KEY_ASSIGNMENTS' } },
+  { key = 'm', mods = action_mods, action = open_weztrunk_manual() },
+  { key = 'p', mods = action_mods, action = act.ActivateCommandPalette },
+  { key = '/', mods = action_mods, action = search_weztrunk_manual() },
+  { key = 'r', mods = action_mods, action = act.ReloadConfiguration },
+  { key = 'Space', mods = action_mods, action = act.QuickSelect },
+  { key = '[', mods = action_mods, action = act.ActivateTabRelative(-1) },
+  { key = ']', mods = action_mods, action = act.ActivateTabRelative(1) },
+  { key = 'h', mods = pane_nav_mods, action = act.ActivatePaneDirection 'Left' },
+  { key = 'j', mods = pane_nav_mods, action = act.ActivatePaneDirection 'Down' },
+  { key = 'k', mods = pane_nav_mods, action = act.ActivatePaneDirection 'Up' },
+  { key = 'l', mods = pane_nav_mods, action = act.ActivatePaneDirection 'Right' },
+  { key = 'LeftArrow', mods = pane_nav_mods, action = act.ActivatePaneDirection 'Left' },
+  { key = 'DownArrow', mods = pane_nav_mods, action = act.ActivatePaneDirection 'Down' },
+  { key = 'UpArrow', mods = pane_nav_mods, action = act.ActivatePaneDirection 'Up' },
+  { key = 'RightArrow', mods = pane_nav_mods, action = act.ActivatePaneDirection 'Right' },
+  { key = 'h', mods = pane_resize_mods, action = act.AdjustPaneSize { 'Left', 3 } },
+  { key = 'j', mods = pane_resize_mods, action = act.AdjustPaneSize { 'Down', 3 } },
+  { key = 'k', mods = pane_resize_mods, action = act.AdjustPaneSize { 'Up', 3 } },
+  { key = 'l', mods = pane_resize_mods, action = act.AdjustPaneSize { 'Right', 3 } },
+  { key = 'LeftArrow', mods = pane_resize_arrow_mods, action = act.AdjustPaneSize { 'Left', 3 } },
+  { key = 'DownArrow', mods = pane_resize_arrow_mods, action = act.AdjustPaneSize { 'Down', 3 } },
+  { key = 'UpArrow', mods = pane_resize_arrow_mods, action = act.AdjustPaneSize { 'Up', 3 } },
+  { key = 'RightArrow', mods = pane_resize_arrow_mods, action = act.AdjustPaneSize { 'Right', 3 } },
   {
     key = 'LeftArrow',
     mods = 'OPT',
@@ -402,17 +412,47 @@ config.keys = {
   { key = '\\', mods = 'LEADER', action = split 'Right' },
 }
 
+if is_linux then
+  table.insert(config.keys, {
+    key = 'x',
+    mods = 'CTRL|ALT',
+    action = act.CloseCurrentPane { confirm = true },
+  })
+  table.insert(config.keys, {
+    key = 'a',
+    mods = 'CTRL|ALT',
+    action = act.ActivateTabRelative(-1),
+  })
+  table.insert(config.keys, {
+    key = 'd',
+    mods = 'CTRL|ALT',
+    action = act.ActivateTabRelative(1),
+  })
+  for i = 1, 8 do
+    table.insert(config.keys, {
+      key = tostring(i),
+      mods = 'ALT',
+      action = act.ActivateTab(i - 1),
+    })
+  end
+  table.insert(config.keys, {
+    key = '9',
+    mods = 'ALT',
+    action = act.ActivateTab(-1),
+  })
+end
+
 for i = 1, 8 do
   table.insert(config.keys, {
     key = tostring(i),
-    mods = 'CMD',
+    mods = primary_mods,
     action = act.ActivateTab(i - 1),
   })
 end
 
 table.insert(config.keys, {
   key = '9',
-  mods = 'CMD',
+  mods = primary_mods,
   action = act.ActivateTab(-1),
 })
 

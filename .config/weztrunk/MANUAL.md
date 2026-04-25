@@ -8,11 +8,11 @@ WezTrunk is three things glued together:
 
 ## Daily Use
 
-- `Cmd+Shift+G`: open the Worktrunk picker and launch or re-attach the agent
-- `Cmd+B g`: same action on the leader layer
-- `Cmd+B G`: create a branch/worktree, then launch the agent
-- `Cmd+Shift+M`: open this manual in a new tab
-- `Cmd+B m`: same manual action on the leader layer
+- `Cmd+Shift+G` on macOS or `Ctrl+Shift+G` on Linux: open the Worktrunk picker and launch or re-attach the agent
+- `Cmd+B g` on macOS or `Ctrl+B g` on Linux: same action on the leader layer
+- `Cmd+B G` on macOS or `Ctrl+B G` on Linux: create a branch/worktree, then launch the agent
+- `Cmd+Shift+M` on macOS or `Ctrl+Shift+M` on Linux: open this manual in a new tab
+- `Cmd+B m` on macOS or `Ctrl+B m` on Linux: same manual action on the leader layer
 - `wtx`: open the Worktrunk picker and launch the agent
 - `wtx feature-x`: switch to a branch worktree and launch the agent there
 - `wtn feature-x`: create a branch/worktree and launch the agent
@@ -38,12 +38,15 @@ WezTrunk is three things glued together:
 
 ## WezTerm
 
-- `Cmd+Shift+G`: Worktrunk picker + launch/re-attach agent
-- `Cmd+B g`: same action on the leader layer
-- `Cmd+B G`: prompt for a branch name, create the worktree, then launch the agent
-- `Cmd+Shift+M`: open the full manual in a new tab
-- `Cmd+Shift+/`: prompt for a topic and open a focused manual search in a new tab
-- `Cmd+Shift+P`, then type `Worktrunk`: self-documented command-palette entries
+- `Cmd+Shift+G` on macOS or `Ctrl+Shift+G` on Linux: Worktrunk picker + launch/re-attach agent
+- `Cmd+B g` on macOS or `Ctrl+B g` on Linux: same action on the leader layer
+- `Cmd+B G` on macOS or `Ctrl+B G` on Linux: prompt for a branch name, create the worktree, then launch the agent
+- `Cmd+Shift+M` on macOS or `Ctrl+Shift+M` on Linux: open the full manual in a new tab
+- `Cmd+Shift+/` on macOS or `Ctrl+Shift+/` on Linux: prompt for a topic and open a focused manual search in a new tab
+- `Cmd+B x` on macOS or `Ctrl+B x` / `Ctrl+Alt+X` on Linux: close the current pane
+- `Cmd+Shift+[` / `Cmd+Shift+]` on macOS or `Ctrl+Alt+A` / `Ctrl+Alt+D` on Linux: previous / next tab
+- `Cmd+1` ... `Cmd+8`, `Cmd+9` on macOS or `Alt+1` ... `Alt+8`, `Alt+9` on Linux: jump to tab, with `9` selecting the last tab
+- `Cmd+Shift+P` on macOS or `Ctrl+Shift+P` on Linux, then type `Worktrunk`: self-documented command-palette entries
 
 ## Worktrunk Tasks
 

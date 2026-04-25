@@ -77,7 +77,7 @@ You can override that with:
 WEZTRUNK_SHELL_RC=~/.bash_profile bash scripts/install.sh
 ```
 
-Then reload WezTerm with `Cmd+Shift+R`.
+Then reload WezTerm with `Cmd+Shift+R` on macOS or `Ctrl+Shift+R` on Linux/Ubuntu.
 
 If you are upgrading an older install, rerun the installer once. This version adds new linked files, so a plain `git pull` is not enough on an existing machine until those new symlinks exist.
 
@@ -101,14 +101,21 @@ If you are upgrading an older install, rerun the installer once. This version ad
 
 ### WezTerm
 
-- `Cmd+Shift+G`: Worktrunk picker + launch/re-attach agent
-- `Cmd+B g`: same action on the leader layer
-- `Cmd+B G`: prompt for branch name, create worktree, launch agent
-- `Cmd+Shift+M`: open the WezTrunk manual in a new tab
-- `Cmd+Shift+/`: prompt for a manual topic and open a focused search in a new tab
-- `Cmd+B m`: same manual action on the leader layer
-- `Cmd+B /`: same manual-search action on the leader layer
-- `Cmd+Shift+P`, then type `Worktrunk`: self-documented command-palette entries
+WezTrunk shortcuts on Linux/Ubuntu avoid the Super key because GNOME reserves several Super combinations before WezTerm can receive them.
+
+| Action | macOS | Linux/Ubuntu |
+| --- | --- | --- |
+| Worktrunk picker + launch/re-attach agent | `Cmd+Shift+G` | `Ctrl+Shift+G` |
+| Same action on the leader layer | `Cmd+B g` | `Ctrl+B g` |
+| Prompt for branch name, create worktree, launch agent | `Cmd+B G` | `Ctrl+B G` |
+| Open the WezTrunk manual in a new tab | `Cmd+Shift+M` | `Ctrl+Shift+M` |
+| Prompt for a manual topic and open a focused search in a new tab | `Cmd+Shift+/` | `Ctrl+Shift+/` |
+| Same manual action on the leader layer | `Cmd+B m` | `Ctrl+B m` |
+| Same manual-search action on the leader layer | `Cmd+B /` | `Ctrl+B /` |
+| Close the current pane | `Cmd+B x` | `Ctrl+B x` or `Ctrl+Alt+X` |
+| Previous / next tab | `Cmd+Shift+[` / `Cmd+Shift+]` | `Ctrl+Alt+A` / `Ctrl+Alt+D` |
+| Jump to tab | `Cmd+1` ... `Cmd+8`, `Cmd+9` last tab | `Alt+1` ... `Alt+8`, `Alt+9` last tab |
+| Self-documented command-palette entries | `Cmd+Shift+P`, then type `Worktrunk` | `Ctrl+Shift+P`, then type `Worktrunk` |
 
 ### Behavior
 
