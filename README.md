@@ -106,6 +106,7 @@ If you are upgrading an older install, rerun the installer once. This version ad
 - `weztrunk backup timer enable`: start the user-level dirty-work backup timer
 - `weztrunk reconcile status`: show watched worktrees and whether they are on top of the base branch
 - `weztrunk reconcile current --agent conflict`: create a scratch reconciliation worktree for the current repo
+- `weztrunk reconcile watch`: keep creating fresh scratch reconciliation worktrees while the current repo changes
 - `weztrunk doctor`: check install links, required commands, SSH/GitHub state, timers, and watched repos
 - `wtman merge`: same manual search path from the shell
 - `wthelp` or `wtm`: open the built-in manual
@@ -205,9 +206,12 @@ weztrunk reconcile status
 weztrunk reconcile current
 weztrunk reconcile current --agent conflict
 weztrunk reconcile current --agent always
+weztrunk reconcile watch --interval 30 --stable 5
 ```
 
 `current` creates a branch named like `weztrunk/reconcile/<branch>-<timestamp>` and a matching scratch worktree under `.worktrees/`, adding that directory to the repo-local Git exclude if needed. If the active worktree is dirty, those changes are copied into the scratch worktree and committed as a WIP snapshot there. The scratch branch is then rebased onto `origin/HEAD` or `origin/main`.
+
+`watch` is the manager mode for work that is still moving. It fingerprints the active checkout, waits until it is stable, then runs `current` from that exact state. If files change while the scratch rebase is being created, it waits and tries again. This keeps an integration worktree on top of `origin/main` without rewriting the worktree your editor or another agent is using.
 
 When the rebase or patch application conflicts, `--agent conflict` launches the configured code agent in the scratch worktree with instructions to resolve the integration. Review the scratch branch before merging or replacing your original branch.
 

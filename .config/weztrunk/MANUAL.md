@@ -29,6 +29,7 @@ WezTrunk is four things glued together:
 - `weztrunk backup timer enable`: enable the dirty-work backup timer
 - `weztrunk reconcile status`: show watched worktrees and whether they are on top of the base branch
 - `weztrunk reconcile current --agent conflict`: create a scratch rebase worktree and launch the agent on conflicts
+- `weztrunk reconcile watch`: keep creating fresh scratch rebase worktrees while the current repo changes
 - `weztrunk doctor`: check install links, dependencies, GitHub/SSH state, timers, and watched repos
 - `wthelp` or `wtm`: same manual command
 - `wzt`: short alias for `weztrunk`, if that name is not already taken
@@ -171,10 +172,13 @@ weztrunk reconcile status
 weztrunk reconcile current
 weztrunk reconcile current --agent conflict
 weztrunk reconcile current --agent always
+weztrunk reconcile watch --interval 30 --stable 5
 wtr status
 ```
 
 `current` creates a branch named like `weztrunk/reconcile/<branch>-<timestamp>` and a matching worktree under `.worktrees/`, adding that directory to the repo-local Git exclude if needed. If the active worktree has local changes, those changes are copied into the scratch worktree and committed there as a WIP snapshot. Then the scratch branch is rebased onto `origin/HEAD` or `origin/main`.
+
+`watch` is the manager mode for work that is still moving. It fingerprints the active checkout, waits until it is stable, then runs `current` from that exact state. If files change while the scratch rebase is being created, it waits and tries again. This keeps an integration worktree on top of `origin/main` without rewriting the worktree your editor or another agent is using.
 
 With `--agent conflict`, WezTrunk launches the configured code agent only when patch application or rebase conflicts need help. With `--agent always`, it launches the agent even when the rebase succeeds, for review and cleanup.
 
