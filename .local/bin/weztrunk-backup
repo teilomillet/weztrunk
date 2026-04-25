@@ -165,8 +165,14 @@ copy_untracked_files() {
       continue
     fi
 
-    mkdir -p "$(dirname "$target")"
-    cp "$src" "$target"
+    if ! mkdir -p "$(dirname "$target")" 2>/dev/null; then
+      printf '%s\tmkdir-failed\n' "$path" >> "$skipped"
+      continue
+    fi
+
+    if ! cp "$src" "$target"; then
+      printf '%s\tcopy-failed\n' "$path" >> "$skipped"
+    fi
   done
 }
 
@@ -187,7 +193,11 @@ snapshot_repo() {
 
   key=$(repo_key "$repo")
   repo_state_dir=$state_dir/$key
-  mkdir -p "$repo_state_dir"
+  if ! mkdir -p "$repo_state_dir" 2>/dev/null; then
+    printf 'skip %s: cannot create backup dir %s\n' "$name" "$repo_state_dir"
+    skipped_count=$((skipped_count + 1))
+    return
+  fi
 
   tmp=$(mktemp "${TMPDIR:-/tmp}/weztrunk-backup.XXXXXX") || return 1
   write_fingerprint_input "$repo" "$tmp"
@@ -202,28 +212,79 @@ snapshot_repo() {
 
   stamp=$(date -u +%Y%m%dT%H%M%SZ)
   dest=$repo_state_dir/$stamp
-  mkdir -p "$dest"
+  if ! mkdir -p "$dest" 2>/dev/null; then
+    printf 'skip %s: cannot create backup snapshot dir %s\n' "$name" "$dest"
+    skipped_count=$((skipped_count + 1))
+    rm -f "$tmp"
+    return
+  fi
 
-  {
+  if ! {
     printf 'repo=%s\n' "$repo"
     printf 'branch=%s\n' "$(git -C "$repo" branch --show-current 2>/dev/null || true)"
     printf 'head=%s\n' "$(git -C "$repo" rev-parse HEAD 2>/dev/null || true)"
     printf 'created_utc=%s\n' "$stamp"
     printf 'fingerprint=%s\n' "$fingerprint"
-  } > "$dest/metadata.txt"
+  } > "$dest/metadata.txt"; then
+    printf 'skip %s: cannot write backup metadata\n' "$name"
+    skipped_count=$((skipped_count + 1))
+    rm -f "$tmp"
+    return
+  fi
 
-  git -C "$repo" status --porcelain=v1 --branch | sed '/^?? \.codex$/d' > "$dest/status.txt"
-  git -C "$repo" diff --staged --binary > "$dest/staged.diff"
-  git -C "$repo" diff --binary > "$dest/unstaged.diff"
-  git -C "$repo" ls-files --others --exclude-standard | sed '/^\.codex$/d' > "$dest/untracked.txt"
-  cp "$tmp" "$dest/fingerprint-input.txt"
+  if ! git -C "$repo" status --porcelain=v1 --branch | sed '/^?? \.codex$/d' > "$dest/status.txt"; then
+    printf 'skip %s: cannot write backup status\n' "$name"
+    skipped_count=$((skipped_count + 1))
+    rm -f "$tmp"
+    return
+  fi
+
+  if ! git -C "$repo" diff --staged --binary > "$dest/staged.diff"; then
+    printf 'skip %s: cannot write staged diff\n' "$name"
+    skipped_count=$((skipped_count + 1))
+    rm -f "$tmp"
+    return
+  fi
+
+  if ! git -C "$repo" diff --binary > "$dest/unstaged.diff"; then
+    printf 'skip %s: cannot write unstaged diff\n' "$name"
+    skipped_count=$((skipped_count + 1))
+    rm -f "$tmp"
+    return
+  fi
+
+  if ! git -C "$repo" ls-files --others --exclude-standard | sed '/^\.codex$/d' > "$dest/untracked.txt"; then
+    printf 'skip %s: cannot write untracked list\n' "$name"
+    skipped_count=$((skipped_count + 1))
+    rm -f "$tmp"
+    return
+  fi
+
+  if ! cp "$tmp" "$dest/fingerprint-input.txt"; then
+    printf 'skip %s: cannot write backup fingerprint input\n' "$name"
+    skipped_count=$((skipped_count + 1))
+    rm -f "$tmp"
+    return
+  fi
 
   if [ "$copied_untracked" -eq 1 ]; then
     copy_untracked_files "$repo" "$dest"
   fi
 
-  printf '%s\n' "$fingerprint" > "$latest_fingerprint"
-  ln -sfn "$dest" "$repo_state_dir/latest"
+  if ! printf '%s\n' "$fingerprint" > "$latest_fingerprint"; then
+    printf 'skip %s: cannot update latest fingerprint\n' "$name"
+    skipped_count=$((skipped_count + 1))
+    rm -f "$tmp"
+    return
+  fi
+
+  if ! ln -sfn "$dest" "$repo_state_dir/latest"; then
+    printf 'skip %s: cannot update latest backup link\n' "$name"
+    skipped_count=$((skipped_count + 1))
+    rm -f "$tmp"
+    return
+  fi
+
   rm -f "$tmp"
   created_count=$((created_count + 1))
   printf 'ok %s: backed up dirty work to %s\n' "$repo" "$dest"
@@ -258,7 +319,11 @@ run_snapshot() {
   fi
   trap 'rmdir "$lock_dir"' EXIT HUP INT TERM
 
-  mkdir -p "$state_dir"
+  if ! mkdir -p "$state_dir" 2>/dev/null; then
+    printf 'weztrunk-backup: cannot create backup state dir %s\n' "$state_dir" >&2
+    return 73
+  fi
+
   process_repos snapshot_repo
   rc=$?
   notify_result
