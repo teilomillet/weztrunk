@@ -7,16 +7,18 @@ repos_runner=${WEZTRUNK_REPOS_RUNNER:-"$HOME/.local/bin/weztrunk-repos"}
 backup_runner=${WEZTRUNK_BACKUP_RUNNER:-"$HOME/.local/bin/weztrunk-backup"}
 reconcile_runner=${WEZTRUNK_RECONCILE_RUNNER:-"$HOME/.local/bin/weztrunk-reconcile"}
 state_dir=${WEZTRUNK_UPKEEP_STATE_DIR:-"${XDG_STATE_HOME:-$HOME/.local/state}/weztrunk/upkeep"}
+reconcile_state_dir=${WEZTRUNK_RECONCILE_STATE_DIR:-"${XDG_STATE_HOME:-$HOME/.local/state}/weztrunk/reconcile"}
 quiet=0
 force=0
 interval_override=
+verbose=0
 
 usage() {
   cat >&2 <<'EOF'
 Usage:
   weztrunk-upkeep maybe [--quiet] [--interval SECONDS]
   weztrunk-upkeep run [--quiet]
-  weztrunk-upkeep status
+  weztrunk-upkeep status [--verbose]
 
 Runs visible, opportunistic repo upkeep without installing a scheduler.
 EOF
@@ -192,11 +194,35 @@ status_upkeep() {
   printf 'reconcile: %s\n' "$reconcile_enabled"
   printf 'reconcile_agent: %s\n' "$reconcile_agent"
   printf 'state_dir: %s\n' "$state_dir"
+  printf 'log_file: %s\n' "$(log_file)"
   printf 'last_run_epoch: %s\n' "$last"
   if [ "$last" -gt 0 ]; then
     printf 'age_seconds: %s\n' $((now - last))
   else
     printf 'age_seconds: never\n'
+  fi
+
+  if [ "$verbose" -eq 1 ]; then
+    fingerprint_dir=$reconcile_state_dir/fingerprints
+    if [ -d "$fingerprint_dir" ]; then
+      fingerprint_count=$(find "$fingerprint_dir" -type f 2>/dev/null | wc -l | tr -d ' ')
+    else
+      fingerprint_count=0
+    fi
+
+    printf 'reconcile_runner: %s\n' "$reconcile_runner"
+    printf 'reconcile_fingerprint_dir: %s\n' "$fingerprint_dir"
+    printf 'reconcile_fingerprint_count: %s\n' "$fingerprint_count"
+
+    if [ -r "$(log_file)" ]; then
+      printf '\nlast_log:\n'
+      sed 's/^/  /' "$(log_file)"
+    fi
+
+    if [ -x "$reconcile_runner" ]; then
+      printf '\nreconcile_status:\n'
+      "$reconcile_runner" status 2>&1 | sed 's/^/  /' || true
+    fi
   fi
 }
 
@@ -212,6 +238,9 @@ while [ "$#" -gt 0 ]; do
       shift
       [ "$#" -gt 0 ] || usage
       interval_override=$1
+      ;;
+    --verbose)
+      verbose=1
       ;;
     *)
       usage

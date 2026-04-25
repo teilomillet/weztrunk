@@ -18,6 +18,8 @@ usage() {
 Usage:
   weztrunk-reconcile status [--config PATH]
   weztrunk-reconcile current [--repo PATH] [--base REF] [--agent conflict|always|never]
+  weztrunk-reconcile promote [--repo PATH] [--scratch BRANCH_OR_PATH] [--target BRANCH] [--base REF] [--check CMD] [--remove]
+  weztrunk-reconcile prune [--repo PATH] [--days N] [--keep N] [--dry-run]
   weztrunk-reconcile watch [--repo PATH] [--base REF] [--interval SECONDS] [--stable SECONDS] [--agent conflict|always|never]
   weztrunk-reconcile watch-all [--config PATH] [--repo PATH] [--base REF] [--interval SECONDS] [--stable SECONDS] [--agent conflict|always|never] [--once]
 
@@ -151,7 +153,7 @@ is_reconcile_branch() {
 
 dirty_count_for() {
   "$git_bin" -C "$1" status --porcelain=v1 2>/dev/null |
-    sed '/^?? \.codex$/d;/^?? \.codex\//d;/^?? \.worktrees$/d;/^?? \.worktrees\//d' |
+    sed '/^?? \.codex$/d;/^?? \.codex\//d;/^?? \.weztrunk$/d;/^?? \.weztrunk\//d;/^?? \.worktrees$/d;/^?? \.worktrees\//d' |
     wc -l |
     tr -d ' '
 }
@@ -168,7 +170,7 @@ dirty_fingerprint_for() {
     "$git_bin" -C "$repo" rev-parse "${base}^{commit}" 2>/dev/null || printf '%s\n' "$base"
     printf 'status\n'
     "$git_bin" -C "$repo" status --porcelain=v1 2>/dev/null |
-      sed '/^?? \.codex$/d;/^?? \.codex\//d;/^?? \.worktrees$/d;/^?? \.worktrees\//d'
+      sed '/^?? \.codex$/d;/^?? \.codex\//d;/^?? \.weztrunk$/d;/^?? \.weztrunk\//d;/^?? \.worktrees$/d;/^?? \.worktrees\//d'
     printf '\nstaged\n'
     "$git_bin" -C "$repo" diff --staged --binary
     printf '\nunstaged\n'
@@ -177,7 +179,7 @@ dirty_fingerprint_for() {
     "$git_bin" -C "$repo" ls-files --others --exclude-standard -z |
       while IFS= read -r -d '' path; do
         case "$path" in
-          .codex|.codex/*|.worktrees|.worktrees/*)
+          .codex|.codex/*|.weztrunk|.weztrunk/*|.worktrees|.worktrees/*)
             continue
             ;;
         esac
@@ -242,6 +244,22 @@ origin_head_for() {
   printf 'HEAD\n'
 }
 
+branch_exists() {
+  "$git_bin" -C "$1" show-ref --verify --quiet "refs/heads/$2"
+}
+
+branch_config_get() {
+  "$git_bin" -C "$1" config --get "branch.$2.$3" 2>/dev/null || true
+}
+
+branch_config_set() {
+  "$git_bin" -C "$1" config "branch.$2.$3" "$4" >/dev/null 2>&1 || true
+}
+
+branch_config_remove() {
+  "$git_bin" -C "$1" config --remove-section "branch.$2" >/dev/null 2>&1 || true
+}
+
 copy_untracked_to_scratch() {
   local repo scratch path src dest
   repo=$1
@@ -249,7 +267,7 @@ copy_untracked_to_scratch() {
 
   while IFS= read -r -d '' path; do
     case "$path" in
-      .codex|.codex/*|.git|.git/*|.worktrees|.worktrees/*)
+      .codex|.codex/*|.git|.git/*|.weztrunk|.weztrunk/*|.worktrees|.worktrees/*)
         continue
         ;;
     esac
@@ -311,7 +329,7 @@ copy_dirty_to_scratch() {
   apply_patch_file "$scratch" "$patch_dir/unstaged.patch" unstaged || patch_failed=1
   copy_untracked_to_scratch "$repo" "$scratch"
 
-  if [ -n "$("$git_bin" -C "$scratch" status --porcelain=v1 | sed '/^?? \.codex$/d')" ]; then
+  if [ -n "$("$git_bin" -C "$scratch" status --porcelain=v1 | sed '/^?? \.codex$/d;/^?? \.codex\//d;/^?? \.weztrunk$/d;/^?? \.weztrunk\//d;/^?? \.worktrees$/d;/^?? \.worktrees\//d')" ]; then
     "$git_bin" -C "$scratch" add -A
     "$git_bin" -C "$scratch" commit -m "WIP reconcile snapshot from $(current_branch_for "$repo")" >/dev/null ||
       patch_failed=1
@@ -319,6 +337,38 @@ copy_dirty_to_scratch() {
 
   rm -rf "$patch_dir"
   return "$patch_failed"
+}
+
+write_assistant_contract() {
+  local scratch source source_branch scratch_branch base contract_path
+  scratch=$1
+  source=$2
+  source_branch=$3
+  scratch_branch=$4
+  base=$5
+  contract_path=$scratch/.weztrunk/INTENT.md
+
+  ensure_local_exclude "$scratch" '.weztrunk/'
+  mkdir -p "$(dirname "$contract_path")" || return 1
+  cat > "$contract_path" <<EOF
+# WezTrunk Reconcile Intent
+
+This worktree is a WezTrunk reconcile integration candidate.
+
+- Source worktree: ${source}
+- Source branch: ${source_branch}
+- Scratch branch: ${scratch_branch}
+- Base: ${base}
+
+Assistant contract:
+
+- Keep ${base} first and put the user's work above it.
+- Resolve rebase, patch, or semantic conflicts in this scratch worktree.
+- Commit the resolved result on ${scratch_branch}.
+- Do not edit, reset, or rewrite the source worktree.
+- Do not push from this scratch worktree.
+- Leave the result ready for review and fast-forward promotion.
+EOF
 }
 
 launch_agent() {
@@ -406,6 +456,12 @@ create_reconcile_scratch() {
     return 1
   fi
 
+  branch_config_set "$source" "$scratch_branch" weztrunk-source-branch "$branch"
+  branch_config_set "$source" "$scratch_branch" weztrunk-source-worktree "$source"
+  branch_config_set "$source" "$scratch_branch" weztrunk-base "$base"
+  branch_config_set "$source" "$scratch_branch" weztrunk-created "$stamp"
+  write_assistant_contract "$scratch_path" "$source" "$branch" "$scratch_branch" "$base" || true
+
   needs_agent=0
   reason=
 
@@ -459,6 +515,370 @@ worktree_rows_for_repo() {
         }
       }
     '
+}
+
+worktree_path_for_branch() {
+  local root target path branch
+  root=$1
+  target=$2
+
+  while IFS="$(printf '\t')" read -r path branch; do
+    if [ "$branch" = "$target" ]; then
+      printf '%s\n' "$path"
+      return 0
+    fi
+  done < <(worktree_rows_for_repo "$root")
+
+  return 1
+}
+
+scratch_timestamp_for_branch() {
+  local branch rest
+  branch=$1
+  rest=${branch#weztrunk/reconcile/}
+  printf '%s\n' "$rest" |
+    sed -n 's/^.*-\([0-9]\{8\}T[0-9]\{6\}Z\)\(-[0-9][0-9]*\)\{0,1\}$/\1/p'
+}
+
+scratch_group_for_branch() {
+  local root branch source rest suffix
+  root=$1
+  branch=$2
+
+  source=$(branch_config_get "$root" "$branch" weztrunk-source-branch)
+  if [ -n "$source" ]; then
+    printf '%s\n' "$source"
+    return
+  fi
+
+  rest=${branch#weztrunk/reconcile/}
+  suffix=$(printf '%s\n' "$rest" |
+    sed -n 's/^.*\(-[0-9]\{8\}T[0-9]\{6\}Z\(-[0-9][0-9]*\)\{0,1\}\)$/\1/p')
+  if [ -n "$suffix" ]; then
+    printf '%s\n' "${rest%"$suffix"}"
+  else
+    printf '%s\n' "$rest"
+  fi
+}
+
+find_latest_scratch_for_target() {
+  local root target rows path branch source safe_target stamp line
+  root=$1
+  target=$2
+  rows=$(mktemp "${TMPDIR:-/tmp}/weztrunk-scratch.XXXXXX") || return 1
+  safe_target=$(sanitize "$target")
+
+  while IFS="$(printf '\t')" read -r path branch; do
+    is_reconcile_branch "$branch" || continue
+    source=$(branch_config_get "$root" "$branch" weztrunk-source-branch)
+    case "$branch" in
+      weztrunk/reconcile/${safe_target}-*)
+        ;;
+      *)
+        [ "$source" = "$target" ] || continue
+        ;;
+    esac
+    if [ -n "$source" ] && [ "$source" != "$target" ]; then
+      continue
+    fi
+    stamp=$(scratch_timestamp_for_branch "$branch")
+    printf '%s\t%s\t%s\n' "${stamp:-00000000T000000Z}" "$branch" "$path"
+  done < <(worktree_rows_for_repo "$root") > "$rows"
+
+  line=$(sort -t "$(printf '\t')" -k1,1r "$rows" | sed -n '1p')
+  rm -f "$rows"
+  [ -n "$line" ] || return 1
+  printf '%s\n' "$line"
+}
+
+timestamp_epoch() {
+  local stamp compact ymd hms formatted
+  stamp=$1
+  compact=${stamp%Z}
+  ymd=${compact%T*}
+  hms=${compact#*T}
+  formatted="${ymd:0:4}-${ymd:4:2}-${ymd:6:2} ${hms:0:2}:${hms:2:2}:${hms:4:2}"
+
+  if date -u -d "$formatted" +%s >/dev/null 2>&1; then
+    date -u -d "$formatted" +%s
+    return
+  fi
+
+  if date -u -j -f '%Y%m%dT%H%M%SZ' "$stamp" +%s >/dev/null 2>&1; then
+    date -u -j -f '%Y%m%dT%H%M%SZ' "$stamp" +%s
+    return
+  fi
+
+  printf '0\n'
+}
+
+promote_reconcile() {
+  local repo_input repo root scratch_arg scratch_path scratch_branch target_branch source_branch base check_cmd remove_after
+  local current line stamp target_path scratch_dirty target_dirty target_head scratch_head safety_branch counter admin_path
+  scratch_arg=
+  scratch_path=
+  scratch_branch=
+  target_branch=
+  check_cmd=
+  remove_after=0
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --repo)
+        shift
+        [ "$#" -gt 0 ] || usage
+        repo_arg=$1
+        ;;
+      --scratch)
+        shift
+        [ "$#" -gt 0 ] || usage
+        scratch_arg=$1
+        ;;
+      --target)
+        shift
+        [ "$#" -gt 0 ] || usage
+        target_branch=$1
+        ;;
+      --base)
+        shift
+        [ "$#" -gt 0 ] || usage
+        base_ref=$1
+        ;;
+      --check)
+        shift
+        [ "$#" -gt 0 ] || usage
+        check_cmd=$1
+        ;;
+      --remove)
+        remove_after=1
+        ;;
+      *)
+        usage
+        ;;
+    esac
+    shift
+  done
+
+  repo_input=${repo_arg:-$PWD}
+  if [ -z "${repo_arg:-}" ] && [ -n "$scratch_arg" ] && repo_root_for "$scratch_arg" >/dev/null 2>&1; then
+    repo_input=$scratch_arg
+  fi
+  repo=$(repo_root_for "$repo_input") || {
+    printf 'Not inside a git repository: %s\n' "$repo_input" >&2
+    return 64
+  }
+  root=$repo
+
+  "$git_bin" -C "$root" fetch --prune origin >/dev/null 2>&1 || true
+  base=${base_ref:-$(origin_head_for "$root")}
+
+  if [ -n "$scratch_arg" ]; then
+    if repo_root_for "$scratch_arg" >/dev/null 2>&1; then
+      scratch_path=$(repo_root_for "$scratch_arg")
+      scratch_branch=$(current_branch_for "$scratch_path")
+      root=$scratch_path
+    else
+      scratch_branch=$scratch_arg
+      scratch_path=$(worktree_path_for_branch "$root" "$scratch_branch" || true)
+    fi
+  else
+    current=$(current_branch_for "$repo")
+    if is_reconcile_branch "$current"; then
+      scratch_branch=$current
+      scratch_path=$repo
+      root=$repo
+    else
+      target_branch=${target_branch:-$current}
+      line=$(find_latest_scratch_for_target "$root" "$target_branch" || true)
+      if [ -n "$line" ]; then
+        IFS="$(printf '\t')" read -r stamp scratch_branch scratch_path <<EOF
+$line
+EOF
+      fi
+    fi
+  fi
+
+  if [ -z "$scratch_branch" ] || ! is_reconcile_branch "$scratch_branch"; then
+    printf 'No reconcile scratch branch selected. Use --scratch BRANCH_OR_PATH.\n' >&2
+    return 64
+  fi
+  branch_exists "$root" "$scratch_branch" || {
+    printf 'Scratch branch not found: %s\n' "$scratch_branch" >&2
+    return 66
+  }
+  if [ -z "$scratch_path" ]; then
+    scratch_path=$(worktree_path_for_branch "$root" "$scratch_branch" || true)
+  fi
+  if [ -z "$scratch_path" ]; then
+    printf 'Scratch branch is not checked out in a worktree: %s\n' "$scratch_branch" >&2
+    return 66
+  fi
+
+  source_branch=$(branch_config_get "$root" "$scratch_branch" weztrunk-source-branch)
+  target_branch=${target_branch:-$source_branch}
+  if [ -z "$target_branch" ]; then
+    printf 'Target branch is unknown for %s. Use --target BRANCH.\n' "$scratch_branch" >&2
+    return 64
+  fi
+  if [ "$target_branch" = "$scratch_branch" ]; then
+    printf 'Target branch cannot be the scratch branch.\n' >&2
+    return 64
+  fi
+  branch_exists "$root" "$target_branch" || {
+    printf 'Target branch not found: %s\n' "$target_branch" >&2
+    return 66
+  }
+
+  scratch_dirty=$(dirty_count_for "$scratch_path")
+  if [ "$scratch_dirty" != "0" ]; then
+    printf 'Cannot promote dirty scratch worktree (%s local change(s)): %s\n' "$scratch_dirty" "$scratch_path" >&2
+    return 65
+  fi
+  if ! "$git_bin" -C "$root" merge-base --is-ancestor "$base" "$scratch_branch" 2>/dev/null; then
+    printf 'Cannot promote: %s is not on top of %s.\n' "$scratch_branch" "$base" >&2
+    return 65
+  fi
+  if ! "$git_bin" -C "$root" merge-base --is-ancestor "$target_branch" "$scratch_branch" 2>/dev/null; then
+    printf 'Cannot promote by fast-forward: %s is not an ancestor of %s.\n' "$target_branch" "$scratch_branch" >&2
+    printf 'Keep resolving in the scratch worktree or replace the branch manually after review.\n' >&2
+    return 65
+  fi
+
+  if [ -n "$check_cmd" ]; then
+    printf 'Running check in scratch worktree: %s\n' "$check_cmd"
+    (cd "$scratch_path" && sh -c "$check_cmd") || return $?
+  fi
+
+  target_path=$(worktree_path_for_branch "$root" "$target_branch" || true)
+  if [ -n "$target_path" ]; then
+    target_dirty=$(dirty_count_for "$target_path")
+    if [ "$target_dirty" != "0" ]; then
+      printf 'Cannot promote into dirty target worktree (%s local change(s)): %s\n' "$target_dirty" "$target_path" >&2
+      return 65
+    fi
+  fi
+
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  safety_branch=weztrunk/safety/$(sanitize "$target_branch")-before-promote-$stamp
+  counter=2
+  while branch_exists "$root" "$safety_branch"; do
+    safety_branch=weztrunk/safety/$(sanitize "$target_branch")-before-promote-$stamp-$counter
+    counter=$((counter + 1))
+  done
+  "$git_bin" -C "$root" branch "$safety_branch" "$target_branch" || return 1
+
+  if [ -n "$target_path" ]; then
+    "$git_bin" -C "$target_path" merge --ff-only "$scratch_branch" || return 1
+  else
+    "$git_bin" -C "$root" branch -f "$target_branch" "$scratch_branch" || return 1
+  fi
+
+  target_head=$("$git_bin" -C "$root" rev-parse "$target_branch")
+  scratch_head=$("$git_bin" -C "$root" rev-parse "$scratch_branch")
+  printf 'Safety branch: %s\n' "$safety_branch"
+  printf 'Promoted %s to %s\n' "$target_branch" "$target_head"
+
+  if [ "$remove_after" -eq 1 ] && [ "$target_head" = "$scratch_head" ]; then
+    admin_path=${target_path:-$root}
+    if [ "$admin_path" = "$scratch_path" ]; then
+      printf 'Promoted, but cannot remove the current scratch worktree from inside itself. Run prune later.\n' >&2
+      return 0
+    fi
+    "$git_bin" -C "$admin_path" worktree remove "$scratch_path" || return 1
+    "$git_bin" -C "$admin_path" branch -D "$scratch_branch" >/dev/null 2>&1 || true
+    branch_config_remove "$admin_path" "$scratch_branch"
+    printf 'Removed scratch worktree and branch: %s\n' "$scratch_branch"
+  fi
+}
+
+prune_reconcile() {
+  local repo_input repo root days keep dry_run rows candidates now path branch group stamp epoch age dirty line
+  days=7
+  keep=2
+  dry_run=0
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --repo)
+        shift
+        [ "$#" -gt 0 ] || usage
+        repo_arg=$1
+        ;;
+      --days)
+        shift
+        [ "$#" -gt 0 ] || usage
+        days=$1
+        ;;
+      --keep)
+        shift
+        [ "$#" -gt 0 ] || usage
+        keep=$1
+        ;;
+      --dry-run)
+        dry_run=1
+        ;;
+      *)
+        usage
+        ;;
+    esac
+    shift
+  done
+
+  repo_input=${repo_arg:-$PWD}
+  repo=$(repo_root_for "$repo_input") || {
+    printf 'Not inside a git repository: %s\n' "$repo_input" >&2
+    return 64
+  }
+  root=$repo
+
+  is_uint "$days" || usage
+  is_uint "$keep" || usage
+
+  rows=$(mktemp "${TMPDIR:-/tmp}/weztrunk-prune.XXXXXX") || return 1
+  candidates=$(mktemp "${TMPDIR:-/tmp}/weztrunk-prune-candidates.XXXXXX") || {
+    rm -f "$rows"
+    return 1
+  }
+  now=$(date +%s)
+
+  while IFS="$(printf '\t')" read -r path branch; do
+    is_reconcile_branch "$branch" || continue
+    stamp=$(scratch_timestamp_for_branch "$branch")
+    [ -n "$stamp" ] || continue
+    group=$(scratch_group_for_branch "$root" "$branch")
+    printf '%s\t%s\t%s\t%s\n' "$group" "$stamp" "$path" "$branch"
+  done < <(worktree_rows_for_repo "$root") > "$rows"
+
+  sort -t "$(printf '\t')" -k1,1 -k2,2r "$rows" |
+    awk -v keep="$keep" 'BEGIN { FS=OFS="\t" } { seen[$1]++; if (seen[$1] > keep) print }' > "$candidates"
+
+  while IFS="$(printf '\t')" read -r group stamp path branch; do
+    [ -n "$branch" ] || continue
+    epoch=$(timestamp_epoch "$stamp")
+    if [ "$epoch" -gt 0 ]; then
+      age=$(((now - epoch) / 86400))
+      [ "$age" -ge "$days" ] || continue
+    else
+      age=unknown
+    fi
+
+    dirty=$(dirty_count_for "$path")
+    if [ "$dirty" != "0" ]; then
+      printf 'skip dirty scratch (%s local change(s)): %s %s\n' "$dirty" "$branch" "$path"
+      continue
+    fi
+
+    if [ "$dry_run" -eq 1 ]; then
+      printf 'would remove %s age_days=%s path=%s\n' "$branch" "$age" "$path"
+    else
+      "$git_bin" -C "$root" worktree remove "$path" || continue
+      "$git_bin" -C "$root" branch -D "$branch" >/dev/null 2>&1 || true
+      branch_config_remove "$root" "$branch"
+      printf 'removed %s age_days=%s path=%s\n' "$branch" "$age" "$path"
+    fi
+  done < "$candidates"
+
+  rm -f "$rows" "$candidates"
 }
 
 status_one_repo() {
@@ -740,6 +1160,12 @@ case "$cmd" in
     "$git_bin" -C "$repo" fetch --prune origin
     base=${base_ref:-$(origin_head_for "$repo")}
     create_reconcile_scratch "$repo" "$base" "$agent_mode" "$repo"
+    ;;
+  promote)
+    promote_reconcile "$@"
+    ;;
+  prune)
+    prune_reconcile "$@"
     ;;
   watch|manager)
     agent_mode=never

@@ -5,6 +5,47 @@ set -eu
 repo_root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
 stamp=$(date +%Y%m%d-%H%M%S)
 os_name=$(uname -s 2>/dev/null || printf 'unknown')
+install_profile=default
+
+usage() {
+  code=${1:-64}
+  cat >&2 <<'EOF'
+Usage: scripts/install.sh [--profile default|managed-mac]
+
+Profiles:
+  default      Link normal WezTrunk files; skip systemd links only on macOS.
+  managed-mac  Use opportunistic upkeep and skip persistent scheduler links.
+EOF
+  exit "$code"
+}
+
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --profile)
+      shift
+      [ "$#" -gt 0 ] || usage
+      install_profile=$1
+      ;;
+    --managed-mac)
+      install_profile=managed-mac
+      ;;
+    -h|--help)
+      usage 0
+      ;;
+    *)
+      usage
+      ;;
+  esac
+  shift
+done
+
+case "$install_profile" in
+  default|managed-mac)
+    ;;
+  *)
+    usage
+    ;;
+esac
 
 detect_shell_rc() {
   if [ -n "${WEZTRUNK_SHELL_RC:-}" ]; then
@@ -96,7 +137,7 @@ link_file "$repo_root/.local/bin/weztrunk-switch" "$HOME/.local/bin/weztrunk-swi
 link_file "$repo_root/.local/bin/weztrunk-upkeep" "$HOME/.local/bin/weztrunk-upkeep"
 link_file "$repo_root/.local/bin/wt-code" "$HOME/.local/bin/wt-code"
 link_file "$repo_root/.local/bin/worktrunk-code-commit" "$HOME/.local/bin/worktrunk-code-commit"
-if [ "$os_name" = "Darwin" ]; then
+if [ "$os_name" = "Darwin" ] || [ "$install_profile" = "managed-mac" ]; then
   remove_repo_symlink "$repo_root/.config/systemd/user/weztrunk-repos-pull.service" "$HOME/.config/systemd/user/weztrunk-repos-pull.service"
   remove_repo_symlink "$repo_root/.config/systemd/user/weztrunk-repos-pull.timer" "$HOME/.config/systemd/user/weztrunk-repos-pull.timer"
   remove_repo_symlink "$repo_root/.config/systemd/user/weztrunk-work-backup.service" "$HOME/.config/systemd/user/weztrunk-work-backup.service"
@@ -133,8 +174,9 @@ if ! grep -Fq "$rc_line" "$shell_rc"; then
 fi
 
 printf 'Installed WezTrunk symlinks from %s\n' "$repo_root"
-if [ "$os_name" = "Darwin" ]; then
-  printf 'Skipped systemd user timer links on macOS; opportunistic upkeep runs from wtx/wtn instead.\n'
+printf 'Install profile: %s\n' "$install_profile"
+if [ "$os_name" = "Darwin" ] || [ "$install_profile" = "managed-mac" ]; then
+  printf 'Skipped systemd user timer links; opportunistic upkeep runs from wtx/wtn instead.\n'
 fi
 printf 'Updated shell startup file: %s\n' "$shell_rc"
 printf 'Reload your shell or run: source %s\n' "$shell_rc"

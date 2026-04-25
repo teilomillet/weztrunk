@@ -71,6 +71,12 @@ bash scripts/install.sh
 source ~/.zshrc
 ```
 
+On a managed Mac, or anywhere you want no persistent scheduler links, use:
+
+```bash
+bash scripts/install.sh --profile managed-mac
+```
+
 The installer auto-selects your shell startup file from `$SHELL`:
 
 - `zsh` -> `~/.zshrc`
@@ -106,9 +112,11 @@ If you are upgrading an older install, rerun the installer once. This version ad
 - `weztrunk backup snapshot`: snapshot dirty watched repos into local state
 - `weztrunk backup timer enable`: start the user-level dirty-work backup timer
 - `weztrunk upkeep maybe`: opportunistic pull/backup, throttled by config
-- `weztrunk upkeep status`: show the current opportunistic upkeep state
+- `weztrunk upkeep status --verbose`: show upkeep state, last log, reconcile fingerprints, and reconcile status
 - `weztrunk reconcile status`: show watched worktrees and whether they are on top of the base branch
 - `weztrunk reconcile current --agent conflict`: create a scratch reconciliation worktree for the current repo
+- `weztrunk reconcile promote --remove`: fast-forward the target branch to a reviewed scratch result, then remove the scratch worktree
+- `weztrunk reconcile prune --dry-run`: preview old clean scratch worktrees that can be removed
 - `weztrunk reconcile watch`: keep creating fresh scratch reconciliation worktrees while the current repo changes
 - `weztrunk reconcile watch-all`: manager loop for every worktree in every watched repo
 - `weztrunk doctor`: check install links, required commands, SSH/GitHub state, timers, and watched repos
@@ -187,7 +195,7 @@ For managed Macs or any machine where a persistent login scheduler is undesirabl
 ```bash
 weztrunk upkeep maybe
 weztrunk upkeep run
-weztrunk upkeep status
+weztrunk upkeep status --verbose
 ```
 
 `wtx` and `wtn` call `weztrunk upkeep maybe --quiet` before switching or creating a worktree. The command checks `[upkeep]` in `config.toml`; with `mode = "opportunistic"`, it runs `backup snapshot` and `repos pull` only if `interval_seconds` has elapsed. No daemon, login item, root privileges, launchd job, or systemd timer is required.
@@ -224,16 +232,22 @@ weztrunk reconcile status
 weztrunk reconcile current
 weztrunk reconcile current --agent conflict
 weztrunk reconcile current --agent always
+weztrunk reconcile promote --remove
+weztrunk reconcile prune --dry-run
 weztrunk reconcile watch --interval 30 --stable 5
 weztrunk reconcile watch-all --once
 weztrunk reconcile watch-all --interval 30 --stable 5
 ```
 
-`current` creates a branch named like `weztrunk/reconcile/<branch>-<timestamp>` and a matching scratch worktree under `.worktrees/`, adding that directory to the repo-local Git exclude if needed. If the active worktree is dirty, those changes are copied into the scratch worktree and committed as a WIP snapshot there. The scratch branch is then rebased onto `origin/HEAD` or `origin/main`.
+`current` creates a branch named like `weztrunk/reconcile/<branch>-<timestamp>` and a matching scratch worktree under `.worktrees/`, adding that directory to the repo-local Git exclude if needed. It also writes an ignored `.weztrunk/INTENT.md` contract inside the scratch worktree so an assistant can see immediately that this is the integration candidate. If the active worktree is dirty, those changes are copied into the scratch worktree and committed as a WIP snapshot there. The scratch branch is then rebased onto `origin/HEAD` or `origin/main`.
 
 `watch` is the manager mode for work that is still moving. It fingerprints the active checkout, waits until it is stable, then runs `current` from that exact state. If files change while the scratch rebase is being created, it waits and tries again. This keeps an integration worktree on top of `origin/main` without rewriting the worktree your editor or another agent is using.
 
 `watch-all` does the same repo-manager work across all worktrees in the watched repos. Clean worktrees are fast-forwarded when Git can do that safely. Dirty, diverged, detached, and scratch worktrees are not rewritten; dirty or diverged worktrees get fresh reconcile candidates instead.
+
+`promote` moves the target branch to a reviewed scratch result only when Git can fast-forward the target to that scratch branch. It creates a safety branch named like `weztrunk/safety/<branch>-before-promote-<timestamp>` before moving anything, and `--remove` deletes the scratch worktree and branch after a successful promotion.
+
+`prune` removes old clean reconcile scratch worktrees. By default it keeps the newest two per source branch and only removes candidates at least seven days old; use `--dry-run` to preview.
 
 The bitter lesson for assistants is part of the model: a reconcile worktree is the integration candidate, not a random side branch. It should be `origin/main` first, then the user's work above it, with conflicts resolved there so the result can be reviewed and promoted by fast-forward. The active dirty worktree stays as the live editing surface until promotion is intentional.
 
