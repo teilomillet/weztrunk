@@ -32,6 +32,7 @@ WezTrunk is four things glued together:
 - `weztrunk reconcile status`: show watched worktrees and whether they are on top of the base branch
 - `weztrunk reconcile current --agent conflict`: create a scratch rebase worktree and launch the agent on conflicts
 - `weztrunk reconcile promote --remove`: fast-forward the target branch to a reviewed scratch result, then remove the scratch worktree
+- `weztrunk reconcile adopt --remove`: replace the target branch with a reviewed scratch result, with a safety branch first
 - `weztrunk reconcile prune --dry-run`: preview old clean scratch worktrees that can be removed
 - `weztrunk reconcile watch`: keep creating fresh scratch rebase worktrees while the current repo changes
 - `weztrunk reconcile watch-all`: manager loop for every worktree in every watched repo
@@ -192,6 +193,7 @@ weztrunk reconcile current
 weztrunk reconcile current --agent conflict
 weztrunk reconcile current --agent always
 weztrunk reconcile promote --remove
+weztrunk reconcile adopt --remove
 weztrunk reconcile prune --dry-run
 weztrunk reconcile watch --interval 30 --stable 5
 weztrunk reconcile watch-all --once
@@ -206,6 +208,8 @@ wtr status
 `watch-all` does the same repo-manager work across all worktrees in the watched repos. Clean worktrees are fast-forwarded when Git can do that safely. Dirty, diverged, detached, and scratch worktrees are not rewritten; dirty or diverged worktrees get fresh reconcile candidates instead.
 
 `promote` moves the target branch to a reviewed scratch result only when Git can fast-forward the target to that scratch branch. It creates a safety branch named like `weztrunk/safety/<branch>-before-promote-<timestamp>` before moving anything, and `--remove` deletes the scratch worktree and branch after a successful promotion.
+
+`adopt` is the explicit reviewed-rewrite path for scratch branches that contain rebased local commits and therefore cannot be promoted by fast-forward. It requires a clean scratch worktree, a clean target worktree, and a scratch result on top of the chosen base. It creates `weztrunk/safety/<branch>-before-adopt-<timestamp>`, then moves the target branch to the scratch result with `reset --hard` when the target is checked out or `branch -f` when it is not.
 
 `prune` removes old clean reconcile scratch worktrees. By default it keeps the newest two per source branch and only removes candidates at least seven days old; use `--dry-run` to preview.
 
