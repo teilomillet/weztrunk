@@ -10,6 +10,7 @@ base_ref=
 script_path=${BASH_SOURCE[0]:-$0}
 watch_interval=${WEZTRUNK_RECONCILE_WATCH_INTERVAL:-30}
 watch_stable=${WEZTRUNK_RECONCILE_WATCH_STABLE:-5}
+watch_once=0
 
 usage() {
   cat >&2 <<'EOF'
@@ -17,6 +18,7 @@ Usage:
   weztrunk-reconcile status [--config PATH]
   weztrunk-reconcile current [--repo PATH] [--base REF] [--agent conflict|always|never]
   weztrunk-reconcile watch [--repo PATH] [--base REF] [--interval SECONDS] [--stable SECONDS] [--agent conflict|always|never]
+  weztrunk-reconcile watch-all [--config PATH] [--repo PATH] [--base REF] [--interval SECONDS] [--stable SECONDS] [--agent conflict|always|never] [--once]
 
 Creates a scratch reconciliation worktree so current work can be rebased on top
 of the latest base without rewriting the active worktree.
@@ -25,6 +27,7 @@ EOF
 }
 
 expand_path() {
+  local raw
   raw=$1
 
   case "$raw" in
@@ -47,6 +50,7 @@ expand_path() {
 }
 
 sanitize() {
+  local value
   value=$(printf '%s' "$1" | tr '/[:space:]' '--' | tr -cs '[:alnum:]._-' '-')
   value=${value#-}
   value=${value%-}
@@ -54,6 +58,7 @@ sanitize() {
 }
 
 find_bin() {
+  local bin_name fallback
   bin_name=$1
   shift
 
@@ -99,6 +104,7 @@ hash_stdin() {
 }
 
 hash_file_path() {
+  local file
   file=$1
 
   if command -v sha256sum >/dev/null 2>&1; then
@@ -115,6 +121,7 @@ repo_root_for() {
 }
 
 repo_name_for() {
+  local repo common_dir
   repo=$1
   common_dir=$("$git_bin" -C "$repo" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
 
@@ -130,6 +137,17 @@ current_branch_for() {
   "$git_bin" -C "$1" branch --show-current 2>/dev/null || true
 }
 
+is_reconcile_branch() {
+  case "$1" in
+    weztrunk/reconcile/*)
+      return 0
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
 dirty_count_for() {
   "$git_bin" -C "$1" status --porcelain=v1 2>/dev/null |
     sed '/^?? \.codex$/d;/^?? \.codex\//d;/^?? \.worktrees$/d;/^?? \.worktrees\//d' |
@@ -138,6 +156,7 @@ dirty_count_for() {
 }
 
 dirty_fingerprint_for() {
+  local repo base path file
   repo=$1
   base=$2
 
@@ -174,6 +193,7 @@ dirty_fingerprint_for() {
 }
 
 origin_head_for() {
+  local repo head
   repo=$1
   head=$("$git_bin" -C "$repo" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || true)
 
@@ -196,6 +216,7 @@ origin_head_for() {
 }
 
 copy_untracked_to_scratch() {
+  local repo scratch path src dest
   repo=$1
   scratch=$2
 
@@ -216,6 +237,7 @@ copy_untracked_to_scratch() {
 }
 
 ensure_local_exclude() {
+  local repo pattern exclude_path
   repo=$1
   pattern=$2
 
@@ -229,6 +251,7 @@ ensure_local_exclude() {
 }
 
 apply_patch_file() {
+  local scratch patch_file mode
   scratch=$1
   patch_file=$2
   mode=$3
@@ -248,6 +271,7 @@ apply_patch_file() {
 }
 
 copy_dirty_to_scratch() {
+  local repo scratch patch_dir patch_failed
   repo=$1
   scratch=$2
   patch_dir=$(mktemp -d "${TMPDIR:-/tmp}/weztrunk-reconcile.XXXXXX") || return 1
@@ -271,6 +295,7 @@ copy_dirty_to_scratch() {
 }
 
 launch_agent() {
+  local scratch repo_name scratch_branch base reason prompt
   scratch=$1
   repo_name=$2
   scratch_branch=$3
@@ -312,20 +337,85 @@ After resolving, summarize what changed and what still needs review."
   )
 }
 
-status_one_repo() {
-  repo=$1
+create_reconcile_scratch() {
+  local source base mode scratch_owner branch repo_name stamp safe_branch scratch_branch counter scratch_path needs_agent reason
+  source=$1
+  base=$2
+  mode=$3
+  scratch_owner=${4:-$source}
+  branch=$(current_branch_for "$source")
 
-  if ! root=$(repo_root_for "$repo"); then
-    printf '%-18s %-18s %-8s %-12s %s\n' "$(basename "$repo")" '-' '-' 'missing' "$repo"
-    return
+  if [ -z "$branch" ]; then
+    printf 'Current worktree is detached; cannot create reconciliation branch: %s\n' "$source" >&2
+    return 64
   fi
 
-  repo_name=$(repo_name_for "$root")
-  "$git_bin" -C "$root" fetch --prune origin >/dev/null 2>&1 || true
-  base=$(origin_head_for "$root")
+  repo_name=$(repo_name_for "$source")
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)
+  safe_branch=$(sanitize "$branch")
+  scratch_branch=weztrunk/reconcile/${safe_branch}-${stamp}
+  counter=2
+  while "$git_bin" -C "$source" show-ref --verify --quiet "refs/heads/$scratch_branch"; do
+    scratch_branch=weztrunk/reconcile/${safe_branch}-${stamp}-${counter}
+    counter=$((counter + 1))
+  done
+  scratch_path=$scratch_owner/.worktrees/$(sanitize "$scratch_branch")
+
+  ensure_local_exclude "$scratch_owner" '.worktrees/'
+  if ! mkdir -p "$(dirname "$scratch_path")"; then
+    printf 'Cannot create scratch worktree parent: %s\n' "$(dirname "$scratch_path")" >&2
+    return 73
+  fi
+
+  if ! "$git_bin" -C "$source" branch "$scratch_branch" "$branch"; then
+    printf 'Cannot create scratch branch: %s\n' "$scratch_branch" >&2
+    return 1
+  fi
+
+  if ! "$git_bin" -C "$source" worktree add "$scratch_path" "$scratch_branch"; then
+    "$git_bin" -C "$source" branch -D "$scratch_branch" >/dev/null 2>&1 || true
+    printf 'Cannot create scratch worktree: %s\n' "$scratch_path" >&2
+    return 1
+  fi
+
+  needs_agent=0
+  reason=
+
+  if [ "$(dirty_count_for "$source")" != "0" ]; then
+    printf 'Copying dirty work from %s into scratch worktree...\n' "$source"
+    if ! copy_dirty_to_scratch "$source" "$scratch_path"; then
+      needs_agent=1
+      reason='dirty work did not apply cleanly to scratch branch'
+    fi
+  fi
+
+  if [ "$needs_agent" -eq 0 ]; then
+    printf 'Rebasing %s onto %s in scratch worktree...\n' "$scratch_branch" "$base"
+    if ! "$git_bin" -C "$scratch_path" rebase "$base"; then
+      needs_agent=1
+      reason='rebase conflict'
+    fi
+  fi
+
+  printf 'Scratch worktree: %s\n' "$scratch_path"
+  printf 'Scratch branch: %s\n' "$scratch_branch"
+
+  if [ "$mode" = always ] || { [ "$mode" = conflict ] && [ "$needs_agent" -eq 1 ]; }; then
+    launch_agent "$scratch_path" "$repo_name" "$scratch_branch" "$base" "${reason:-requested review}"
+  elif [ "$needs_agent" -eq 1 ]; then
+    printf 'Reconciliation needs manual work: %s.\n' "${reason:-unknown issue}"
+    printf 'Open the scratch worktree and resolve it there before merging.\n'
+  else
+    printf 'Reconciliation completed without conflicts. Review the scratch branch before merging.\n'
+  fi
+}
+
+worktree_rows_for_repo() {
+  local root
+  root=$1
 
   "$git_bin" -C "$root" worktree list --porcelain |
-    awk -v repo="$repo_name" -v base="$base" '
+    awk '
       /^worktree / { path=$2 }
       /^branch / { branch=$2; sub("^refs/heads/", "", branch) }
       /^detached$/ { branch="detached" }
@@ -340,7 +430,23 @@ status_one_repo() {
           print path "\t" branch
         }
       }
-    ' |
+    '
+}
+
+status_one_repo() {
+  local repo root repo_name base path branch dirty base_state
+  repo=$1
+
+  if ! root=$(repo_root_for "$repo"); then
+    printf '%-18s %-18s %-8s %-12s %s\n' "$(basename "$repo")" '-' '-' 'missing' "$repo"
+    return
+  fi
+
+  repo_name=$(repo_name_for "$root")
+  "$git_bin" -C "$root" fetch --prune origin >/dev/null 2>&1 || true
+  base=$(origin_head_for "$root")
+
+  worktree_rows_for_repo "$root" |
     while IFS="$(printf '\t')" read -r path branch; do
       dirty=$(dirty_count_for "$path")
       if [ "$branch" != "detached" ] && "$git_bin" -C "$path" merge-base --is-ancestor "$base" HEAD 2>/dev/null; then
@@ -353,6 +459,7 @@ status_one_repo() {
 }
 
 process_repos() {
+  local handler line repo
   handler=$1
 
   if [ ! -f "$config_path" ]; then
@@ -382,6 +489,151 @@ parse_agent_mode() {
       usage
       ;;
   esac
+}
+
+sync_worktree_once() {
+  local owner_root path branch base dirty current_head base_head
+  owner_root=$1
+  path=$2
+  branch=$3
+  base=$4
+  dirty=$(dirty_count_for "$path")
+
+  if [ "$branch" = "detached" ]; then
+    printf 'skip %s: detached HEAD\n' "$path"
+    return 0
+  fi
+
+  if is_reconcile_branch "$branch"; then
+    printf 'skip %s: reconcile scratch branch\n' "$path"
+    return 0
+  fi
+
+  if [ "$dirty" = "0" ]; then
+    if "$git_bin" -C "$path" merge-base --is-ancestor HEAD "$base" 2>/dev/null; then
+      current_head=$("$git_bin" -C "$path" rev-parse HEAD)
+      base_head=$("$git_bin" -C "$path" rev-parse "$base")
+      if [ "$current_head" = "$base_head" ]; then
+        printf 'ok %s: already at %s\n' "$path" "$base"
+      elif "$git_bin" -C "$path" merge --ff-only "$base"; then
+        printf 'ok %s: fast-forwarded %s to %s\n' "$path" "$branch" "$base"
+      else
+        printf 'skip %s: fast-forward failed, creating scratch reconcile worktree\n' "$path"
+        create_reconcile_scratch "$path" "$base" "$agent_mode" "$owner_root"
+      fi
+      return 0
+    fi
+
+    if "$git_bin" -C "$path" merge-base --is-ancestor "$base" HEAD 2>/dev/null; then
+      printf 'ok %s: %s already contains %s\n' "$path" "$branch" "$base"
+      return 0
+    fi
+  fi
+
+  if [ "$dirty" = "0" ]; then
+    printf 'scratch %s: clean but not fast-forwardable to %s\n' "$path" "$base"
+  else
+    printf 'scratch %s: %s local change(s)\n' "$path" "$dirty"
+  fi
+  create_reconcile_scratch "$path" "$base" "$agent_mode" "$owner_root"
+}
+
+sync_all_repo_once() {
+  local repo root base rows path branch
+  repo=$1
+
+  if ! root=$(repo_root_for "$repo"); then
+    printf 'skip %s: not a git checkout\n' "$repo"
+    return 0
+  fi
+
+  if ! "$git_bin" -C "$root" fetch --prune origin; then
+    printf 'skip %s: fetch from origin failed\n' "$root"
+    return 0
+  fi
+
+  base=${base_ref:-$(origin_head_for "$root")}
+  printf 'repo %s: base %s\n' "$(repo_name_for "$root")" "$base"
+
+  rows=$(mktemp "${TMPDIR:-/tmp}/weztrunk-worktrees.XXXXXX") || return 1
+  worktree_rows_for_repo "$root" > "$rows"
+  while IFS="$(printf '\t')" read -r path branch; do
+    [ -n "$path" ] || continue
+    sync_worktree_once "$root" "$path" "$branch" "$base"
+  done < "$rows"
+  rm -f "$rows"
+}
+
+sync_all_once() {
+  if [ -n "$repo_arg" ]; then
+    sync_all_repo_once "$repo_arg"
+  else
+    process_repos sync_all_repo_once
+  fi
+}
+
+watch_all_tick_repo() {
+  local repo root base rows path branch key fingerprint now after
+  repo=$1
+
+  if ! root=$(repo_root_for "$repo"); then
+    printf 'skip %s: not a git checkout\n' "$repo"
+    return 0
+  fi
+
+  "$git_bin" -C "$root" fetch --prune origin >/dev/null 2>&1 || {
+    printf 'skip %s: fetch from origin failed\n' "$root"
+    return 0
+  }
+
+  base=${base_ref:-$(origin_head_for "$root")}
+  rows=$(mktemp "${TMPDIR:-/tmp}/weztrunk-worktrees.XXXXXX") || return 1
+  worktree_rows_for_repo "$root" > "$rows"
+  while IFS="$(printf '\t')" read -r path branch; do
+    [ -n "$path" ] || continue
+    [ "$branch" != "detached" ] || continue
+    is_reconcile_branch "$branch" && continue
+
+    key=$(printf '%s\t%s' "$root" "$path" | hash_stdin)
+    fingerprint=$(dirty_fingerprint_for "$path" "$base")
+    now=$(date +%s)
+
+    if [ "${watch_completed[$key]:-}" = "$fingerprint" ]; then
+      watch_pending[$key]=
+      watch_pending_since[$key]=0
+    elif [ "${watch_pending[$key]:-}" != "$fingerprint" ]; then
+      watch_pending[$key]=$fingerprint
+      watch_pending_since[$key]=$now
+      printf '%s %s change detected; waiting for stability...\n' "$(date '+%H:%M:%S')" "$path"
+    elif [ $((now - ${watch_pending_since[$key]:-0})) -ge "$watch_stable" ]; then
+      printf '%s syncing %s onto %s...\n' "$(date '+%H:%M:%S')" "$path" "$base"
+      if sync_worktree_once "$root" "$path" "$branch" "$base"; then
+        after=$(dirty_fingerprint_for "$path" "$base")
+        if [ "$after" = "$fingerprint" ]; then
+          watch_completed[$key]=$fingerprint
+          watch_pending[$key]=
+          watch_pending_since[$key]=0
+          printf '%s %s sync snapshot is current.\n' "$(date '+%H:%M:%S')" "$path"
+        else
+          watch_pending[$key]=$after
+          watch_pending_since[$key]=$(date +%s)
+          printf '%s %s changed during sync; waiting for newest files...\n' "$(date '+%H:%M:%S')" "$path"
+        fi
+      else
+        watch_pending_since[$key]=$now
+        printf '%s %s sync failed; will retry after stability.\n' "$(date '+%H:%M:%S')" "$path"
+      fi
+    fi
+  done < "$rows"
+  rm -f "$rows"
+}
+
+watch_all_tick() {
+  if [ -n "$repo_arg" ]; then
+    watch_all_tick_repo "$repo_arg"
+  else
+    process_repos watch_all_tick_repo
+  fi
 }
 
 cmd=${1:-status}
@@ -445,59 +697,7 @@ case "$cmd" in
 
     "$git_bin" -C "$repo" fetch --prune origin
     base=${base_ref:-$(origin_head_for "$repo")}
-    repo_name=$(repo_name_for "$repo")
-    stamp=$(date -u +%Y%m%dT%H%M%SZ)
-    safe_branch=$(sanitize "$branch")
-    scratch_branch=weztrunk/reconcile/${safe_branch}-${stamp}
-    scratch_path=$repo/.worktrees/$(sanitize "$scratch_branch")
-
-    ensure_local_exclude "$repo" '.worktrees/'
-    if ! mkdir -p "$(dirname "$scratch_path")"; then
-      printf 'Cannot create scratch worktree parent: %s\n' "$(dirname "$scratch_path")" >&2
-      exit 73
-    fi
-
-    if ! "$git_bin" -C "$repo" branch "$scratch_branch" "$branch"; then
-      printf 'Cannot create scratch branch: %s\n' "$scratch_branch" >&2
-      exit 1
-    fi
-
-    if ! "$git_bin" -C "$repo" worktree add "$scratch_path" "$scratch_branch"; then
-      "$git_bin" -C "$repo" branch -D "$scratch_branch" >/dev/null 2>&1 || true
-      printf 'Cannot create scratch worktree: %s\n' "$scratch_path" >&2
-      exit 1
-    fi
-
-    needs_agent=0
-    reason=
-
-    if [ "$(dirty_count_for "$repo")" != "0" ]; then
-      printf 'Copying dirty work from %s into scratch worktree...\n' "$repo"
-      if ! copy_dirty_to_scratch "$repo" "$scratch_path"; then
-        needs_agent=1
-        reason='dirty work did not apply cleanly to scratch branch'
-      fi
-    fi
-
-    if [ "$needs_agent" -eq 0 ]; then
-      printf 'Rebasing %s onto %s in scratch worktree...\n' "$scratch_branch" "$base"
-      if ! "$git_bin" -C "$scratch_path" rebase "$base"; then
-        needs_agent=1
-        reason='rebase conflict'
-      fi
-    fi
-
-    printf 'Scratch worktree: %s\n' "$scratch_path"
-    printf 'Scratch branch: %s\n' "$scratch_branch"
-
-    if [ "$agent_mode" = always ] || { [ "$agent_mode" = conflict ] && [ "$needs_agent" -eq 1 ]; }; then
-      launch_agent "$scratch_path" "$repo_name" "$scratch_branch" "$base" "${reason:-requested review}"
-    elif [ "$needs_agent" -eq 1 ]; then
-      printf 'Reconciliation needs manual work: %s.\n' "${reason:-unknown issue}"
-      printf 'Open the scratch worktree and resolve it there before merging.\n'
-    else
-      printf 'Reconciliation completed without conflicts. Review the scratch branch before merging.\n'
-    fi
+    create_reconcile_scratch "$repo" "$base" "$agent_mode" "$repo"
     ;;
   watch|manager)
     agent_mode=never
@@ -593,6 +793,74 @@ case "$cmd" in
         fi
       fi
 
+      sleep "$watch_interval"
+    done
+    ;;
+  watch-all|manager-all)
+    agent_mode=never
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        --config)
+          shift
+          [ "$#" -gt 0 ] || usage
+          config_path=$1
+          ;;
+        --repo)
+          shift
+          [ "$#" -gt 0 ] || usage
+          repo_arg=$1
+          ;;
+        --base)
+          shift
+          [ "$#" -gt 0 ] || usage
+          base_ref=$1
+          ;;
+        --interval)
+          shift
+          [ "$#" -gt 0 ] || usage
+          watch_interval=$1
+          ;;
+        --stable)
+          shift
+          [ "$#" -gt 0 ] || usage
+          watch_stable=$1
+          ;;
+        --agent)
+          shift
+          [ "$#" -gt 0 ] || usage
+          parse_agent_mode "$1"
+          ;;
+        --once)
+          watch_once=1
+          ;;
+        *)
+          usage
+          ;;
+      esac
+      shift
+    done
+
+    is_uint "$watch_interval" || usage
+    is_uint "$watch_stable" || usage
+    if [ "$watch_interval" -lt 1 ]; then
+      printf 'Watch interval must be at least 1 second.\n' >&2
+      exit 64
+    fi
+
+    if [ "$watch_once" -eq 1 ]; then
+      sync_all_once
+      exit $?
+    fi
+
+    declare -A watch_completed
+    declare -A watch_pending
+    declare -A watch_pending_since
+
+    printf 'Watching all worktrees for reconcile snapshots.\n'
+    printf 'interval=%ss stable=%ss agent=%s\n' "$watch_interval" "$watch_stable" "$agent_mode"
+
+    while :; do
+      watch_all_tick
       sleep "$watch_interval"
     done
     ;;
