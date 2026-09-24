@@ -1,0 +1,133 @@
+#!/bin/sh
+
+set -eu
+
+state_home=${XDG_STATE_HOME:-"$HOME/.local/state"}
+pane_dir=${WEZTRUNK_PANE_DIR:-"$state_home/weztrunk/panes"}
+wezterm_bin=${WEZTRUNK_WEZTERM_BIN:-wezterm}
+
+usage() {
+  printf 'Usage: %s <register repo branch pane-id agent|send cwd context-file|pane cwd>\n' "$0" >&2
+  exit 64
+}
+
+sanitize() {
+  printf '%s' "$1" | tr '/[:space:]' '--' | tr -cs '[:alnum:]._-' '-'
+}
+
+repo_name() {
+  common_dir=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  if [ "$(basename "$common_dir")" = ".git" ]; then
+    basename "$(dirname "$common_dir")"
+  else
+    basename "$common_dir"
+  fi
+}
+
+record_for() {
+  printf '%s/%s-%s\n' "$pane_dir" "$(sanitize "$1")" "$(sanitize "$2")"
+}
+
+current_record() {
+  cwd=$1
+  repo=$(repo_name "$cwd") || {
+    printf 'Not inside a Git worktree: %s\n' "$cwd" >&2
+    return 64
+  }
+  branch=$(git -C "$cwd" branch --show-current 2>/dev/null || true)
+  if [ -z "$branch" ]; then
+    printf 'Current worktree is detached: %s\n' "$cwd" >&2
+    return 64
+  fi
+  record_for "$repo" "$branch"
+}
+
+pane_is_live() {
+  pane_id=$1
+  command -v "$wezterm_bin" >/dev/null 2>&1 || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  "$wezterm_bin" cli list --format json 2>/dev/null | python3 -c '
+import json, sys
+target = int(sys.argv[1])
+try:
+    panes = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(1)
+raise SystemExit(0 if any(item.get("pane_id") == target for item in panes) else 1)
+' "$pane_id"
+}
+
+read_record() {
+  record=$1
+  [ -r "$record" ] || return 1
+  pane_id=$(sed -n '1p' "$record")
+  agent=$(sed -n '2p' "$record")
+  case "$pane_id" in
+    ''|*[!0-9]*)
+      return 1
+      ;;
+  esac
+  pane_is_live "$pane_id"
+}
+
+cmd=${1:-}
+[ -n "$cmd" ] || usage
+shift
+
+case "$cmd" in
+  register)
+    [ "$#" -eq 4 ] || usage
+    repo=$1
+    branch=$2
+    pane_id=$3
+    agent=$4
+    case "$pane_id" in
+      ''|*[!0-9]*) usage ;;
+    esac
+    umask 077
+    mkdir -p "$pane_dir"
+    chmod 700 "$pane_dir"
+    record=$(record_for "$repo" "$branch")
+    tmp=$record.$$
+    trap 'rm -f "$tmp"' EXIT HUP INT TERM
+    printf '%s\n%s\n' "$pane_id" "$agent" > "$tmp"
+    mv "$tmp" "$record"
+    trap - EXIT HUP INT TERM
+    ;;
+  pane)
+    [ "$#" -eq 1 ] || usage
+    record=$(current_record "$1") || exit $?
+    if ! read_record "$record"; then
+      rm -f "$record"
+      exit 3
+    fi
+    printf '%s\n%s\n' "$pane_id" "$agent"
+    ;;
+  send)
+    [ "$#" -eq 2 ] || usage
+    cwd=$1
+    context_file=$2
+    if [ ! -f "$context_file" ] || [ ! -r "$context_file" ]; then
+      printf 'Context file is not a readable regular file: %s\n' "$context_file" >&2
+      exit 66
+    fi
+    record=$(current_record "$cwd") || exit $?
+    if ! read_record "$record"; then
+      rm -f "$record"
+      printf 'No live WezTrunk agent pane is registered for this worktree.\n' >&2
+      exit 3
+    fi
+    prompt=$(cat)
+    if [ -z "$prompt" ]; then
+      printf 'Context prompt is empty.\n' >&2
+      exit 64
+    fi
+    printf '%s' "$prompt" | "$wezterm_bin" cli send-text --pane-id "$pane_id"
+    printf '\r' | "$wezterm_bin" cli send-text --no-paste --pane-id "$pane_id"
+    "$wezterm_bin" cli activate-pane --pane-id "$pane_id"
+    printf '%s\n' "${agent:-weztrunk}"
+    ;;
+  *)
+    usage
+    ;;
+esac

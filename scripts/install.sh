@@ -129,6 +129,7 @@ link_file "$repo_root/.local/bin/weztrunk-agent" "$HOME/.local/bin/weztrunk-agen
 link_file "$repo_root/.local/bin/weztrunk" "$HOME/.local/bin/weztrunk"
 link_file "$repo_root/.local/bin/weztrunk-backup" "$HOME/.local/bin/weztrunk-backup"
 link_file "$repo_root/.local/bin/weztrunk-config" "$HOME/.local/bin/weztrunk-config"
+link_file "$repo_root/.local/bin/weztrunk-context" "$HOME/.local/bin/weztrunk-context"
 link_file "$repo_root/.local/bin/weztrunk-doctor" "$HOME/.local/bin/weztrunk-doctor"
 link_file "$repo_root/.local/bin/weztrunk-manual" "$HOME/.local/bin/weztrunk-manual"
 link_file "$repo_root/.local/bin/weztrunk-reconcile" "$HOME/.local/bin/weztrunk-reconcile"
@@ -158,6 +159,7 @@ chmod +x \
   "$HOME/.local/bin/weztrunk" \
   "$HOME/.local/bin/weztrunk-backup" \
   "$HOME/.local/bin/weztrunk-config" \
+  "$HOME/.local/bin/weztrunk-context" \
   "$HOME/.local/bin/weztrunk-doctor" \
   "$HOME/.local/bin/weztrunk-reconcile" \
   "$HOME/.local/bin/weztrunk-switch" \

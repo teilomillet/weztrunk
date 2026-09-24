@@ -5,6 +5,7 @@ set -eu
 manual_runner=${WEZTRUNK_MANUAL_RUNNER:-"$HOME/.local/bin/weztrunk-manual"}
 switch_runner=${WEZTRUNK_SWITCH_RUNNER:-"$HOME/.local/bin/weztrunk-switch"}
 agent_runner=${WEZTRUNK_AGENT_RUNNER:-"$HOME/.local/bin/weztrunk-agent"}
+context_runner=${WEZTRUNK_CONTEXT_RUNNER:-"$HOME/.local/bin/weztrunk-context"}
 config_runner=${WEZTRUNK_CONFIG_RUNNER:-"$HOME/.local/bin/weztrunk-config"}
 repos_runner=${WEZTRUNK_REPOS_RUNNER:-"$HOME/.local/bin/weztrunk-repos"}
 backup_runner=${WEZTRUNK_BACKUP_RUNNER:-"$HOME/.local/bin/weztrunk-backup"}
@@ -13,7 +14,7 @@ doctor_runner=${WEZTRUNK_DOCTOR_RUNNER:-"$HOME/.local/bin/weztrunk-doctor"}
 reconcile_runner=${WEZTRUNK_RECONCILE_RUNNER:-"$HOME/.local/bin/weztrunk-reconcile"}
 
 usage() {
-  printf 'Usage: %s <man|profile|repos|backup|upkeep|reconcile|doctor|switch|agent> [args...]\n' "$0" >&2
+  printf 'Usage: %s <man|profile|repos|backup|upkeep|reconcile|doctor|switch|agent|context> [args...]\n' "$0" >&2
   exit 64
 }
 
@@ -72,6 +73,9 @@ case "$cmd" in
     ;;
   agent)
     exec "$agent_runner" "$@"
+    ;;
+  context)
+    exec "$context_runner" "$@"
     ;;
   *)
     usage

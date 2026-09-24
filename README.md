@@ -14,6 +14,7 @@ The name stays agent-neutral on purpose. The current default implementation targ
 - Adds Worktrunk aliases and hooks for agent resume, manual cache hydration, tmux renaming, and branch-session cleanup.
 - Tracks selected repos with conservative status, pull, dirty-work backup, conflict reconciliation, doctor, and optional user-level systemd timers.
 - Shows `repo:branch` in WezTerm tab titles for worktree tabs.
+- Routes Land context-file prompts to the live agent pane for that repo/branch.
 
 ## Files
 
@@ -29,6 +30,7 @@ The name stays agent-neutral on purpose. The current default implementation targ
 - [`.local/bin/weztrunk`](./.local/bin/weztrunk): top-level CLI entrypoint for manual and helper subcommands.
 - [`.local/bin/weztrunk-backup`](./.local/bin/weztrunk-backup): dirty-work snapshot helper.
 - [`.local/bin/weztrunk-config`](./.local/bin/weztrunk-config): TOML-backed profile reader.
+- [`.local/bin/weztrunk-context`](./.local/bin/weztrunk-context): validated Land-to-agent pane bridge.
 - [`.local/bin/weztrunk-doctor`](./.local/bin/weztrunk-doctor): local install and dependency checkup.
 - [`.local/bin/weztrunk-agent`](./.local/bin/weztrunk-agent): shared agent dispatcher and session utilities.
 - [`.local/bin/weztrunk-manual`](./.local/bin/weztrunk-manual): manual viewer for shell and WezTerm.
@@ -133,6 +135,7 @@ If you are upgrading an older install, rerun the installer once. This version ad
 - `wt step weztrunk-agent`: re-attach the current worktree's agent session
 - `wt step weztrunk-hydrate`: copy gitignored files into the current worktree on demand
 - `wt step weztrunk-manual`: print the manual from inside a repo
+- `weztrunk context pane "$PWD"`: show the registered live agent pane for the current worktree
 
 ### WezTerm
 
@@ -164,6 +167,9 @@ WezTrunk shortcuts on Linux/Ubuntu avoid the Super key because GNOME reserves se
 - Reconciliation happens in scratch worktrees and never rewrites the active worktree automatically.
 - `post-switch` renames the current tmux window to the active branch when inside tmux.
 - `post-remove` cleans up the detached branch session socket after a worktree is removed.
+- `wt-code` records the WezTerm pane attached to each branch-scoped agent. Land
+  can send a temporary context-file prompt to that exact live pane; it falls
+  back to its own model chooser when no valid pane is registered.
 
 ## Repo Upkeep
 

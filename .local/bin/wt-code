@@ -9,6 +9,7 @@ fi
 
 dispatcher=${WEZTRUNK_AGENT_DISPATCHER:-"$HOME/.local/bin/weztrunk-agent"}
 config_runner=${WEZTRUNK_CONFIG_RUNNER:-"$HOME/.local/bin/weztrunk-config"}
+context_runner=${WEZTRUNK_CONTEXT_RUNNER:-"$HOME/.local/bin/weztrunk-context"}
 
 if [ ! -x "$dispatcher" ]; then
   printf 'WezTrunk agent dispatcher not found: %s\n' "$dispatcher" >&2
@@ -18,6 +19,11 @@ fi
 repo=$1
 branch=$2
 shift 2
+
+if [ -n "${WEZTERM_PANE:-}" ] && [ -x "$context_runner" ]; then
+  agent_name=$($dispatcher name 2>/dev/null || printf 'code\n')
+  "$context_runner" register "$repo" "$branch" "$WEZTERM_PANE" "$agent_name" || true
+fi
 
 socket=$("$dispatcher" socket-path "$repo" "$branch")
 socket_dir=$(dirname "$socket")

@@ -1,6 +1,5 @@
 local wezterm = require 'wezterm'
 local act = wezterm.action
-local builtin_schemes = wezterm.color.get_builtin_schemes()
 
 local config = wezterm.config_builder()
 local weztrunk_switch_runner = wezterm.home_dir .. '/.local/bin/weztrunk-switch'
@@ -28,32 +27,10 @@ end
 
 local function scheme_for_appearance(appearance)
   if appearance:find 'Dark' then
-    return 'WezTrunk Gruvbox dark, hard'
+    return 'WezTrunk XY-Zed'
   end
 
-  return 'WezTrunk Gruvbox light, hard'
-end
-
-local function deep_copy(value)
-  if type(value) ~= 'table' then
-    return value
-  end
-
-  local copy = {}
-  for key, nested_value in pairs(value) do
-    copy[key] = deep_copy(nested_value)
-  end
-
-  return copy
-end
-
-local function with_accent_ansi(base_scheme, accent, bright_accent)
-  local scheme = deep_copy(base_scheme)
-  scheme.ansi[3] = accent
-  scheme.ansi[7] = accent
-  scheme.brights[3] = bright_accent
-  scheme.brights[7] = bright_accent
-  return scheme
+  return 'WezTrunk Rose Pine Dawn'
 end
 
 local function path_from_cwd_uri(cwd)
@@ -318,18 +295,63 @@ end)
 
 config.window_decorations = 'INTEGRATED_BUTTONS|RESIZE'
 config.integrated_title_button_alignment = 'Left'
-config.color_schemes = {
-  ['WezTrunk Gruvbox dark, hard'] = with_accent_ansi(
-    builtin_schemes['Gruvbox dark, hard (base16)'],
-    '#ee8959',
-    '#f4aa88'
-  ),
-  ['WezTrunk Gruvbox light, hard'] = with_accent_ansi(
-    builtin_schemes['Gruvbox light, hard (base16)'],
-    '#4c1d95',
-    '#5b21b6'
-  ),
+-- Preserve Dawn's warm background while deepening its text and accent colours.
+local dawn = wezterm.color.get_builtin_schemes()['rose-pine-dawn']
+dawn.foreground = '#403c59'
+dawn.cursor_bg = '#a85555'
+dawn.cursor_fg = '#faf4ed'
+dawn.cursor_border = '#a85555'
+dawn.selection_bg = '#e4d7de'
+dawn.selection_fg = '#403c59'
+dawn.ansi = {
+  '#f2e9e1', '#a64b68', '#245a70', '#966017',
+  '#35747d', '#735593', '#a85555', '#403c59',
 }
+dawn.brights = {
+  '#625e78', '#a64b68', '#245a70', '#966017',
+  '#35747d', '#735593', '#a85555', '#403c59',
+}
+dawn.tab_bar = {
+  background = '#f2e9e1',
+  active_tab = { bg_color = '#faf4ed', fg_color = '#403c59', intensity = 'Bold' },
+  inactive_tab = { bg_color = '#f2e9e1', fg_color = '#625e78' },
+  inactive_tab_hover = { bg_color = '#e4d7de', fg_color = '#403c59' },
+  new_tab = { bg_color = '#f2e9e1', fg_color = '#625e78' },
+  new_tab_hover = { bg_color = '#e4d7de', fg_color = '#a85555' },
+}
+
+-- XY-Zed's background and accents, with brighter ANSI variants for terminal text.
+-- Palette reference: https://github.com/zarifpour/xy-zed
+config.color_schemes = {
+  ['WezTrunk Rose Pine Dawn'] = dawn,
+  ['WezTrunk XY-Zed'] = {
+    foreground = '#f7f7f8',
+    background = '#121212',
+    cursor_bg = '#7de486',
+    cursor_fg = '#121212',
+    cursor_border = '#7de486',
+    selection_bg = '#2c4430',
+    selection_fg = '#f7f7f8',
+    ansi = {
+      '#1e2025', '#f82871', '#96df71', '#fee56c',
+      '#10a793', '#c74cec', '#08e7c5', '#f7f7f8',
+    },
+    brights = {
+      '#aca8ae', '#ffa3b5', '#cef0b9', '#fef1b7',
+      '#9cd4c7', '#e7abf7', '#a9f4e1', '#f7f7f8',
+    },
+    tab_bar = {
+      background = '#1b1b1b',
+      active_tab = { bg_color = '#121212', fg_color = '#7de486' },
+      inactive_tab = { bg_color = '#1b1b1b', fg_color = '#aca8ae' },
+      inactive_tab_hover = { bg_color = '#2c4430', fg_color = '#f7f7f8' },
+      new_tab = { bg_color = '#1b1b1b', fg_color = '#aca8ae' },
+      new_tab_hover = { bg_color = '#2c4430', fg_color = '#7de486' },
+    },
+  },
+}
+-- Improve faint text from terminal applications, including true-colour output over SSH.
+config.text_min_contrast_ratio = 4.5
 config.color_scheme = scheme_for_appearance(get_appearance())
 config.set_environment_variables = {
   WEZTRUNK_APPEARANCE = get_appearance(),

@@ -47,6 +47,7 @@ WezTrunk is four things glued together:
 - `wt step weztrunk-agent`: re-attach the current worktree's agent session
 - `wt step weztrunk-hydrate`: copy gitignored files into the current worktree on demand
 - `wt step weztrunk-manual`: print this manual from inside a repo
+- `weztrunk context pane "$PWD"`: show the live agent pane registered for this worktree
 
 ## Shell
 
@@ -107,6 +108,11 @@ WezTrunk is four things glued together:
 - `weztrunk man session`: jump to this section
 - each repo/branch gets a separate `dtach` socket
 - `wt remove` and `wt merge` trigger a Worktrunk `post-remove` hook that cleans up the branch session socket
+- `wt-code` also records the WezTerm pane for the repo/branch. Land uses
+  that record to send its private context-file prompt to the existing agent
+  pane and focus it, without creating or resizing terminal panes itself.
+- stale pane records are rejected against `wezterm cli list`; Land then
+  falls back to its local Codex/Claude chooser.
 
 ## Repo Upkeep
 
